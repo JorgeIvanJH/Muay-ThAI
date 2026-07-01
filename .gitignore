@@ -1,4 +1,5 @@
 videos
+output/
 models/yolo
 
 # Byte-compiled / optimized / DLL files
