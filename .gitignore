@@ -1,8 +1,8 @@
 media/
 output/
-models/yolo
-models/depth
-
+models/yolo/weights
+models/depth/Depth-Anything-V2
+models/depth/weights
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
