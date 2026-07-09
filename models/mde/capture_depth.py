@@ -1,3 +1,5 @@
+import os
+import sys
 import argparse
 import json
 import re
@@ -5,130 +7,20 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from depth_anything_v2.dpt import DepthAnythingV2  # noqa: E402
 import cv2
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from PIL import Image
 
-repo_root = Path(__file__).resolve().parent
-depth_anything_metric_root = (
-    repo_root / "models" / "depth" / "Depth-Anything-V2" / "metric_depth"
-)
-sys.path.insert(0, str(depth_anything_metric_root))
-
-from depth_anything_v2.dpt import DepthAnythingV2  # noqa: E402
-
-DEFAULT_IMAGE_PATH = (
-    repo_root / "media" / "videos" / "Rodtang-taetat-2.mp4"
-)
-DEFAULT_CHECKPOINT_PATH = (
-    depth_anything_metric_root
-    / "checkpoints"
-    / "depth_anything_v2_metric_hypersim_vitl.pth"
-)
-DEFAULT_ENCODER = "vitl"
-DEFAULT_MAX_DEPTH = 20.0
-DEFAULT_INPUT_SIZE = 200
-MODEL_LABEL_PREFIX = "depth-anything-v2-metric-hypersim"
-
-IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
-VIDEO_EXTENSIONS = {
-    ".avi",
-    ".m4v",
-    ".mkv",
-    ".mov",
-    ".mp4",
-    ".mpeg",
-    ".mpg",
-    ".webm",
-}
-
-MODEL_CONFIGS = {
-    "vits": {"encoder": "vits", "features": 64, "out_channels": [48, 96, 192, 384]},
-    "vitb": {"encoder": "vitb", "features": 128, "out_channels": [96, 192, 384, 768]},
-    "vitl": {
-        "encoder": "vitl",
-        "features": 256,
-        "out_channels": [256, 512, 1024, 1024],
-    },
-    "vitg": {
-        "encoder": "vitg",
-        "features": 384,
-        "out_channels": [1536, 1536, 1536, 1536],
-    },
-}
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+import models.utils as modelutils
+import utils as mdeutils
+import config as mdecfg
 
 
-def slugify(value):
-    value = str(value).strip().lower()
-    value = re.sub(r"[^a-z0-9]+", "-", value)
-    return value.strip("-") or "unknown"
 
-
-def resolve_path(path):
-    path = Path(path)
-    if path.is_absolute():
-        return path
-    return repo_root / path
-
-
-def model_label(encoder):
-    return f"{MODEL_LABEL_PREFIX}-{encoder}"
-
-
-def parse_source(source):
-    source_text = str(source).strip()
-    if source_text.isdigit():
-        return int(source_text), f"webcam-{source_text}", "video", f"webcam-{source_text}"
-
-    source_path = resolve_path(source_text)
-    if not source_path.is_file():
-        raise FileNotFoundError(f"Input source not found: {source_path}")
-
-    suffix = source_path.suffix.lower()
-    if suffix in IMAGE_EXTENSIONS:
-        return source_path, source_path.stem, "image", str(source_path)
-    if suffix in VIDEO_EXTENSIONS:
-        return str(source_path), source_path.stem, "video", str(source_path)
-
-    supported_extensions = sorted(IMAGE_EXTENSIONS | VIDEO_EXTENSIONS)
-    raise ValueError(
-        f"Unsupported source type for {source_path}. "
-        f"Supported extensions: {', '.join(supported_extensions)}"
-    )
-
-
-def build_output_paths(output_dir, source_label, media_type, label):
-    run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_label = f"{slugify(source_label)}__{slugify(label)}__{run_id}"
-    run_dir = resolve_path(output_dir) / run_label
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    file_prefix = f"{slugify(source_label)}__{slugify(label)}"
-    paths = {
-        "run_dir": run_dir,
-        "metadata": run_dir / f"{file_prefix}_metadata.json",
-    }
-    if media_type == "image":
-        paths.update(
-            {
-                "predictions": run_dir / f"{file_prefix}_predictions.npz",
-                "depth_image": run_dir / f"{file_prefix}_depth.jpg",
-            }
-        )
-    elif media_type == "video":
-        paths.update(
-            {
-                "depth_video": run_dir / f"{file_prefix}_depth.mp4",
-                "frame_predictions": run_dir / f"{file_prefix}_frame_predictions.jsonl",
-                "depth_frames": run_dir / f"{file_prefix}_depth_frames",
-            }
-        )
-    else:
-        raise ValueError(f"Unsupported media type: {media_type}")
-
-    return paths
 
 
 def select_device():
@@ -146,11 +38,11 @@ def load_state_dict(checkpoint_path):
         return torch.load(str(checkpoint_path), map_location="cpu")
 
 
-def load_depth_model(checkpoint_path, encoder, max_depth):
+def load_depth_model(checkpoint_path, max_depth):
     device = select_device()
     model = DepthAnythingV2(
         **{
-            **MODEL_CONFIGS[encoder],
+            **mdecfg.MDE_ENCODER_CONFIG,
             "max_depth": max_depth,
         }
     )
@@ -213,45 +105,42 @@ def colorize_depth_bgr(depth):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--model",
+        default=str(mdecfg.MDE_WEIGHTS),
+        help="Path to the Depth Anything-V2-metric model weights.",
+    )
+    parser.add_argument(
         "--source",
-        "--image",
         dest="source",
-        default=str(DEFAULT_IMAGE_PATH),
-        help="Image path, video path, or webcam index.",
+        default=str(mdecfg.MDE_INPUT),
+        help="Video path or webcam index.",
     )
     parser.add_argument(
-        "--checkpoint",
-        default=str(DEFAULT_CHECKPOINT_PATH),
-        help="Path to the Depth Anything V2 metric checkpoint.",
+        "--output",
+        default=str(mdecfg.MDE_OUTPUT),
+        help="Folder where depth predictions and video are saved.",
     )
     parser.add_argument(
-        "--encoder",
-        default=DEFAULT_ENCODER,
-        choices=sorted(MODEL_CONFIGS),
-        help="Depth Anything V2 encoder size.",
+        "--no-display",
+        action="store_true",
+        help="Save output without opening the preview window.",
+    )
+    parser.add_argument(
+        "--max-frames",
+        type=int,
+        help="Optional frame limit for quick test runs.",
     )
     parser.add_argument(
         "--max-depth",
         type=float,
-        default=DEFAULT_MAX_DEPTH,
+        default=mdecfg.MDE_MAX_DEPTH,
         help="Maximum metric depth used by the model.",
     )
     parser.add_argument(
         "--input-size",
         type=int,
-        default=DEFAULT_INPUT_SIZE,
+        default=mdecfg.MDE_INPUT_SIZE,
         help="Inference input size.",
-    )
-    parser.add_argument(
-        "--output",
-        default="output",
-        help="Folder where depth predictions are saved.",
-    )
-    parser.add_argument(
-        "--start-frame",
-        type=int,
-        default=0,
-        help="First source frame to process for video sources.",
     )
     parser.add_argument(
         "--frame-stride",
@@ -259,30 +148,6 @@ def parse_args():
         default=1,
         help="Process every Nth frame for video sources.",
     )
-    parser.add_argument(
-        "--max-frames",
-        type=int,
-        help="Optional processed-frame limit for video sources.",
-    )
-    parser.add_argument(
-        "--display",
-        action="store_true",
-        help="Open a live depth preview window for video sources.",
-    )
-    save_depth_group = parser.add_mutually_exclusive_group()
-    save_depth_group.add_argument(
-        "--save-frame-depths",
-        dest="save_frame_depths",
-        action="store_true",
-        help="Save raw per-frame depth arrays for video sources.",
-    )
-    save_depth_group.add_argument(
-        "--no-save-frame-depths",
-        dest="save_frame_depths",
-        action="store_false",
-        help="Do not save raw per-frame depth arrays for video sources.",
-    )
-    parser.set_defaults(save_frame_depths=False)
     return parser.parse_args()
 
 
@@ -290,7 +155,6 @@ def base_metadata(args, source, checkpoint_path, label, device):
     return {
         "source": str(source),
         "model": label,
-        "checkpoint": str(checkpoint_path),
         "encoder": args.encoder,
         "max_depth": args.max_depth,
         "input_size": args.input_size,
@@ -413,7 +277,7 @@ def process_video_source(
                 if args.save_frame_depths:
                     frame_depth_path = (
                         output_paths["depth_frames"]
-                        / f"{slugify(source_label)}_frame_{source_frame_index:06d}_depth.npz"
+                        / f"{modelutils.slugify(source_label)}_frame_{source_frame_index:06d}_depth.npz"
                     )
                     np.savez_compressed(frame_depth_path, depth=depth)
 
@@ -495,29 +359,16 @@ def process_video_source(
 
 def main():
     args = parse_args()
-    capture_source, source_label, media_type, source_display = parse_source(args.source)
-    checkpoint_path = resolve_path(args.checkpoint)
 
-    if not checkpoint_path.is_file():
-        raise FileNotFoundError(
-            f"Depth Anything V2 metric checkpoint not found at {checkpoint_path}. "
-            "Download it into models/depth/Depth-Anything-V2/metric_depth/checkpoints first."
-        )
+    capture_source, source_label = modelutils.parse_source(args.source)
+    output_paths = modelutils.build_output_paths(args.output, source_label, args.model)
 
-    label = model_label(args.encoder)
-    output_paths = build_output_paths(
-        output_dir=args.output,
-        source_label=source_label,
-        media_type=media_type,
-        label=label,
-    )
 
     model, device = load_depth_model(
-        checkpoint_path=checkpoint_path,
-        encoder=args.encoder,
+        checkpoint_path=args.model,
         max_depth=args.max_depth,
     )
-
+    breakpoint()
     if media_type == "image":
         process_image_source(
             args=args,

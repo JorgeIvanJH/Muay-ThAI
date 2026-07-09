@@ -1,11 +1,6 @@
-import argparse
-import json
 import re
 from datetime import datetime
 from pathlib import Path
-import config as cfg
-import cv2
-from ultralytics import YOLO
 
 
 def slugify(value):
