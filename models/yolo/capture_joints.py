@@ -37,7 +37,7 @@ def parse_args():
     parser.add_argument(
         "--model",
         default=str(yolocfg.YOLO_WEIGHTS),
-        help="Path to the YOLO model file.",
+        help="Path to the YOLO model weights.",
     )
     parser.add_argument(
         "--source",
@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument(
         "--output",
         default=str(yolocfg.YOLO_OUTPUT),
-        help="Folder where predictions and video are saved.",
+        help="Folder where joint predictions and video are saved.",
     )
     parser.add_argument(
         "--no-display",
@@ -67,6 +67,7 @@ def parse_args():
             "Temporal smoothing factor for joint xy positions. Lower values smooth more; 1.0 disables smoothing."
         ),
     )
+    # TODO: Add frame-stride
     return parser.parse_args()
 
 

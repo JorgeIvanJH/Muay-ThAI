@@ -23,86 +23,6 @@ from transformers import pipeline
 from PIL import Image
 
 
-
-def select_device():
-    if torch.cuda.is_available():
-        return "cuda"
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
-
-
-def load_state_dict(checkpoint_path):
-    try:
-        return torch.load(str(checkpoint_path), map_location="cpu", weights_only=True)
-    except TypeError:
-        return torch.load(str(checkpoint_path), map_location="cpu")
-
-
-def load_depth_model(checkpoint_path, max_depth):
-    device = select_device()
-    model = DepthAnythingV2(
-        **{
-            **mdecfg.MDE_ENCODER_CONFIG,
-            "max_depth": max_depth,
-        }
-    )
-    model.load_state_dict(load_state_dict(checkpoint_path))
-    return model.to(device).eval(), device
-
-
-def infer_depth_from_bgr(model, image_bgr, input_size):
-    if image_bgr is None:
-        raise ValueError("OpenCV returned an empty frame.")
-
-    with torch.inference_mode():
-        depth = model.infer_image(image_bgr, input_size)
-
-    depth = np.asarray(depth, dtype=np.float32)
-    finite_depth = depth[np.isfinite(depth)]
-    if finite_depth.size == 0:
-        raise ValueError("The model returned no finite depth values.")
-
-    return depth, finite_depth
-
-
-def infer_depth(model, image_path, input_size):
-    image_bgr = cv2.imread(str(image_path))
-    if image_bgr is None:
-        raise ValueError(f"OpenCV could not read image: {image_path}")
-
-    return infer_depth_from_bgr(model, image_bgr, input_size)
-
-
-def depth_summary(depth, finite_depth=None):
-    if finite_depth is None:
-        finite_depth = depth[np.isfinite(depth)]
-    if finite_depth.size == 0:
-        raise ValueError("The model returned no finite depth values.")
-
-    return {
-        "depth_shape": list(depth.shape),
-        "depth_min_m": float(finite_depth.min()),
-        "depth_max_m": float(finite_depth.max()),
-        "depth_mean_m": float(finite_depth.mean()),
-    }
-
-
-def colorize_depth(depth):
-    inverse_depth = 1.0 / np.clip(depth, 1e-4, None)
-    max_invdepth = min(float(np.nanmax(inverse_depth)), 1 / 0.1)
-    min_invdepth = max(float(np.nanmin(inverse_depth)), 1 / 250)
-    scale = max(max_invdepth - min_invdepth, 1e-8)
-    normalized = np.clip((inverse_depth - min_invdepth) / scale, 0.0, 1.0)
-
-    color_depth = plt.get_cmap("turbo")(normalized)[..., :3]
-    return (color_depth * 255).astype(np.uint8)
-
-
-def colorize_depth_bgr(depth):
-    return cv2.cvtColor(colorize_depth(depth), cv2.COLOR_RGB2BGR)
-
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -164,32 +84,6 @@ def base_metadata(args, source, checkpoint_path, label, device):
     }
 
 
-def process_image_source(args, image_path, model, device, output_paths, label, checkpoint_path):
-    depth, finite_depth = infer_depth(
-        model=model,
-        image_path=image_path,
-        input_size=args.input_size,
-    )
-
-    np.savez_compressed(output_paths["predictions"], depth=depth)
-    Image.fromarray(colorize_depth(depth)).save(
-        output_paths["depth_image"],
-        format="JPEG",
-        quality=90,
-    )
-
-    metadata = {
-        **base_metadata(args, image_path, checkpoint_path, label, device),
-        **depth_summary(depth, finite_depth),
-    }
-    output_paths["metadata"].write_text(
-        json.dumps(metadata, indent=2),
-        encoding="utf-8",
-    )
-
-    print(f"Saved depth predictions to {output_paths['predictions']}")
-    print(f"Saved colorized depth to {output_paths['depth_image']}")
-    print(f"Saved metadata to {output_paths['metadata']}")
 
 
 def process_video_source(
@@ -363,39 +257,69 @@ def main():
 
     capture_source, source_label = modelutils.parse_source(args.source)
     output_paths = modelutils.build_output_paths(args.output, source_label, args.model)
-    
-
     model = mdeutils.safe_model_load(args.model)
+    print(f"Model loaded on device: {model.device}")
 
-    breakpoint()
-    model, device = load_depth_model(
-        checkpoint_path=args.model,
-        max_depth=args.max_depth,
-    )
-    
-    if media_type == "image":
-        process_image_source(
-            args=args,
-            image_path=capture_source,
-            model=model,
-            device=device,
-            output_paths=output_paths,
-            label=label,
-            checkpoint_path=checkpoint_path,
-        )
-    else:
-        process_video_source(
-            args=args,
-            capture_source=capture_source,
-            source_label=source_label,
-            source_display=source_display,
-            model=model,
-            device=device,
-            output_paths=output_paths,
-            label=label,
-            checkpoint_path=checkpoint_path,
-        )
+    cap = cv2.VideoCapture(capture_source)
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open input source: {args.source}")
 
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        fps = 30
+
+    writer = None
+    frame_index = 0
+
+
+    with output_paths["predictions"].open("w",        encoding="utf-8") as predictions_file:
+        while cap.isOpened():
+            success, frame = cap.read()
+            if not success:
+                break
+            
+            with torch.inference_mode():
+                depth = model.infer_image(frame, args.input_size)
+
+
+
+            depth = np.asarray(depth, dtype=np.float32)
+            depth_bgr = mdeutils.colorize_depth_bgr(depth)
+            if writer is None:
+                height, width = depth_bgr.shape[:2]
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(
+                            str(output_paths["video"]),
+                            fourcc,
+                            fps,
+                            (width, height),
+                        ) # TODO: standarize writer for both YOLO and MDE
+            frame_depth_path = (output_paths["depth_frames"] / f"{modelutils.slugify(source_label)}_frame_{int(cap.get(cv2.CAP_PROP_POS_FRAMES)):06d}_depth.npz")
+            np.savez_compressed(frame_depth_path, depth=depth)
+
+            frame_summary = mdeutils.depth_summary(depth)
+            frame_predictions = {
+                "depth_file": str(frame_depth_path) if frame_depth_path else None,
+                **frame_summary,
+            }
+            predictions_file.write(json.dumps(frame_predictions) + "\n")
+            writer.write(depth_bgr)
+
+            if not args.no_display:
+                cv2.imshow("Depth Estimation", depth_bgr)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+
+            frame_index += 1
+            if args.max_frames is not None and frame_index >= args.max_frames:
+                break
+    cap.release()
+    if writer is not None:
+        writer.release()
+    cv2.destroyAllWindows()
+
+    print(f"Saved frame predictions to {output_paths['predictions']}")
+    print(f"Saved colorized depth video to {output_paths['video']}")
 
 if __name__ == "__main__":
     main()

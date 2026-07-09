@@ -32,3 +32,4 @@ MDE_ENCODER_CONFIG = MDE_MODEL_CONFIGS.get(MDE_ENCODER_NAME, MDE_MODEL_CONFIGS["
 # -------- WITH HUGGINGFACE PIPELINE --------
 MDE_HF_REPO_ID = "depth-anything/Depth-Anything-V2-Metric-Outdoor-Large-hf"
 MDE_HF_WEIGHTS = ROOT_DIR / "models" / "mde" / "weights" / MDE_HF_REPO_ID.split("/")[-1]
+MDE_DEVICE = "cuda"
