@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from depth_anything_v2.dpt import DepthAnythingV2  # noqa: E402
+# from depth_anything_v2.dpt import DepthAnythingV2  # noqa: E402
 import cv2
 import numpy as np
 import torch
@@ -19,7 +19,8 @@ import models.utils as modelutils
 import utils as mdeutils
 import config as mdecfg
 
-
+from transformers import pipeline
+from PIL import Image
 
 
 
@@ -106,7 +107,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model",
-        default=str(mdecfg.MDE_WEIGHTS),
+        default=str(mdecfg.MDE_HF_WEIGHTS),
         help="Path to the Depth Anything-V2-metric model weights.",
     )
     parser.add_argument(
@@ -362,13 +363,16 @@ def main():
 
     capture_source, source_label = modelutils.parse_source(args.source)
     output_paths = modelutils.build_output_paths(args.output, source_label, args.model)
+    
 
+    model = mdeutils.safe_model_load(args.model)
 
+    breakpoint()
     model, device = load_depth_model(
         checkpoint_path=args.model,
         max_depth=args.max_depth,
     )
-    breakpoint()
+    
     if media_type == "image":
         process_image_source(
             args=args,
