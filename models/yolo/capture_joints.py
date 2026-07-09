@@ -13,6 +13,25 @@ import models.utils as modelutils
 import utils as yoloutils
 import config as yolocfg
 
+
+def smooth_result_keypoints(result, previous_smoothed_keypoints, alpha=yolocfg.YOLO_SMOOTHING_ALPHA):
+    if result.keypoints is None:
+        return None
+
+    keypoint_data = result.keypoints.data.clone()
+    current_xy = keypoint_data[..., :2]
+    if previous_smoothed_keypoints is not None and previous_smoothed_keypoints.shape == current_xy.shape:
+        previous_smoothed_keypoints = previous_smoothed_keypoints.to(current_xy.device)
+        smoothed_xy = alpha * current_xy + (1.0 - alpha) * previous_smoothed_keypoints
+    else:
+        smoothed_xy = current_xy
+
+    keypoint_data[..., :2] = smoothed_xy
+    result.keypoints = result.keypoints.__class__(keypoint_data, result.orig_shape)
+
+    return smoothed_xy.detach().clone()
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -40,11 +59,22 @@ def parse_args():
         type=int,
         help="Optional frame limit for quick test runs.",
     )
+    parser.add_argument(
+        "--smooth-alpha",
+        type=float,
+        default=yolocfg.YOLO_SMOOTHING_ALPHA,
+        help=(
+            "Temporal smoothing factor for joint xy positions. Lower values smooth more; 1.0 disables smoothing."
+        ),
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    if not 0.0 <= args.smooth_alpha <= 1.0:
+        raise ValueError("--smooth-alpha must be between 0.0 and 1.0")
+
     capture_source, source_label = modelutils.parse_source(args.source)
     output_paths = modelutils.build_output_paths(args.output, source_label, args.model)
 
@@ -59,6 +89,7 @@ def main():
 
     writer = None
     frame_index = 0
+    previous_smoothed_keypoints = None
 
     with output_paths["predictions"].open("w", encoding="utf-8") as predictions_file:
         while cap.isOpened():
@@ -67,6 +98,12 @@ def main():
                 break
 
             results = model(frame, verbose=False)
+            # temporal smoothing
+            previous_smoothed_keypoints = smooth_result_keypoints(
+                results[0],
+                previous_smoothed_keypoints,
+                args.smooth_alpha,
+            )
             annotated_frame = results[0].plot()
 
             if writer is None:
@@ -84,7 +121,7 @@ def main():
                 "source": args.source,
                 "model": args.model,
                 "people": yoloutils.keypoints_to_people(results[0]),
-                "detections": yoloutils.boxes_to_detections(results[0]),
+                "boxes": yoloutils.boxes_to_detections(results[0]),
             }
             predictions_file.write(json.dumps(frame_predictions) + "\n")
             writer.write(annotated_frame)
