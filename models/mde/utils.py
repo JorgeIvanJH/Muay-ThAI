@@ -1,6 +1,6 @@
 import torch
 from transformers import pipeline
-import config as mdecfg
+from . import config as mdecfg
 from huggingface_hub import snapshot_download
 import numpy as np
 import cv2

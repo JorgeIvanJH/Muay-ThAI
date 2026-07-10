@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import cv2
 from ultralytics import YOLO
-import config as yolocfg
+from . import config as yolocfg
 
 def boxes_to_detections(result):
     if result.boxes is None:
