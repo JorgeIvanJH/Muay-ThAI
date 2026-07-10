@@ -257,6 +257,9 @@ def main():
 
     capture_source, source_label = modelutils.parse_source(args.source)
     output_paths = modelutils.build_output_paths(args.output, source_label, args.model)
+    output_paths["depth_frames"] = output_paths["run_dir"] / "depth_frames"
+    output_paths["depth_frames"].mkdir(parents=True, exist_ok=True)
+
     model = mdeutils.safe_model_load(args.model)
     print(f"Model loaded on device: {model.device}")
 
@@ -277,13 +280,14 @@ def main():
             success, frame = cap.read()
             if not success:
                 break
-            
+
+            image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             with torch.inference_mode():
-                depth = model.infer_image(frame, args.input_size)
+                result = model(image)
 
-
-
+            depth = result["predicted_depth"].detach().cpu().numpy()
             depth = np.asarray(depth, dtype=np.float32)
+            depth = np.squeeze(depth)
             depth_bgr = mdeutils.colorize_depth_bgr(depth)
             if writer is None:
                 height, width = depth_bgr.shape[:2]
