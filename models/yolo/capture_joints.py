@@ -14,23 +14,6 @@ import utils as yoloutils
 import config as yolocfg
 
 
-def smooth_result_keypoints(result, previous_smoothed_keypoints, alpha=yolocfg.YOLO_SMOOTHING_ALPHA):
-    if result.keypoints is None:
-        return None
-
-    keypoint_data = result.keypoints.data.clone()
-    current_xy = keypoint_data[..., :2]
-    if previous_smoothed_keypoints is not None and previous_smoothed_keypoints.shape == current_xy.shape:
-        previous_smoothed_keypoints = previous_smoothed_keypoints.to(current_xy.device)
-        smoothed_xy = alpha * current_xy + (1.0 - alpha) * previous_smoothed_keypoints
-    else:
-        smoothed_xy = current_xy
-
-    keypoint_data[..., :2] = smoothed_xy
-    result.keypoints = result.keypoints.__class__(keypoint_data, result.orig_shape)
-
-    return smoothed_xy.detach().clone()
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -100,7 +83,7 @@ def main():
 
             results = model(frame, verbose=False)
             # temporal smoothing
-            previous_smoothed_keypoints = smooth_result_keypoints(
+            previous_smoothed_keypoints = yoloutils.smooth_result_keypoints(
                 results[0],
                 previous_smoothed_keypoints,
                 args.smooth_alpha,
