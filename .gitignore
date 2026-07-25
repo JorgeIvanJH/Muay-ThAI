@@ -1,4 +1,7 @@
-media/
+media/images
+media/videos/raw
+media/videos/30fps
+media/videos/60fps
 output/
 models/yolo/weights
 models/mde/Depth-Anything-V2
