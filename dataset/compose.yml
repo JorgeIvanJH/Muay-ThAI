@@ -1,0 +1,60 @@
+name: muay-thai-labeling
+
+services:
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    container_name: LabelStudioContainer
+    command:
+      - label-studio
+      - --log-level
+      - DEBUG
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./LSdata:/label-studio/data
+    restart: unless-stopped
+    networks:
+      - labeling
+
+  yolo:
+    image: humansignal/yolo:v0
+    container_name: yolo
+    build:
+      context: ./label-studio-ml-backend/label_studio_ml/examples/yolo
+      args:
+        TEST_ENV: ${TEST_ENV:-}
+    command:
+      - /bin/bash
+      - -c
+      - >-
+        sed -i 's/\r$//' /app/start.sh && exec /app/start.sh
+    environment:
+      BASIC_AUTH_USER: ""
+      BASIC_AUTH_PASS: ""
+      LOG_LEVEL: DEBUG
+      WORKERS: "1"
+      THREADS: "8"
+      MODEL_DIR: /data/models
+      MODEL_ROOT: /app/models
+      PYTHONPATH: /app
+      ALLOW_CUSTOM_MODEL_PATH: "true"
+      DEBUG_PLOT: "false"
+      MODEL_SCORE_THRESHOLD: "0.5"
+      LABEL_STUDIO_HOST: ${LABEL_STUDIO_HOST:-http://label-studio:8080}
+      LABEL_STUDIO_URL: ${LABEL_STUDIO_HOST:-http://label-studio:8080}
+      LABEL_STUDIO_API_KEY: ${LABEL_STUDIO_API_KEY:-}
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./label-studio-ml-backend/label_studio_ml/examples/yolo/data/server:/data
+      - ./label-studio-ml-backend/label_studio_ml/examples/yolo/models:/app/models
+      - ./label-studio-ml-backend/label_studio_ml/examples/yolo/cache_dir:/app/cache_dir
+    depends_on:
+      - label-studio
+    restart: unless-stopped
+    networks:
+      - labeling
+
+networks:
+  labeling:
+    name: muay-thai-labeling
