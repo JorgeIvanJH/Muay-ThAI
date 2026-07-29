@@ -1,0 +1,1 @@
+export here the classification labels from label studio using JSON-MIN format

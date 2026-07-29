@@ -187,3 +187,8 @@ References:
 
 - [TimelineLabels YOLO tutorial](https://labelstud.io/guide/ml_tutorials/yolo_timeline_labels)
 - [Label Studio ML backend Docker networking](https://labelstud.io/guide/ml#localhost-and-Docker-containers)
+
+
+## Which videos to use:
+
+The configuration above assumes 30fps videos at CFR. found only on [here](../media/videos/30fps) when processed using [this bash file](../media/videos/preprocess_fps.sh)

@@ -24,4 +24,4 @@ YOLO_KEYPOINT_NAMES = [
     "left_ankle",
     "right_ankle",
 ]
-YOLO_SMOOTHING_ALPHA = 0.3
+YOLO_SMOOTHING_ALPHA = 1
