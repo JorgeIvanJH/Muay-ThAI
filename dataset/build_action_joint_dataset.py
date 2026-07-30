@@ -1,12 +1,13 @@
-"""Build frame-level pose and action-label CSV files.
+"""Build frame-level raw pose and action-label CSV files.
 
-Each output CSV contains one row per decoded video frame. The largest detected
-person is used as the primary subject, producing a fixed-width table that can
-be grouped by ``video_id`` and ordered by ``frame_index`` for TCNs, or consumed
-directly by tabular models such as LightGBM.
+Each output CSV contains one row per detected person/box per decoded video
+frame. Frames without detections retain one row with empty detection fields so
+the temporal sequence stays aligned. Subject selection is intentionally
+deferred to the shared model preprocessing pipeline.
 
-Joint and bounding-box coordinates are normalized to [0, 1]. Missing poses are
-kept as rows with empty pose features so the temporal sequence stays aligned.
+Joint and bounding-box coordinates are stored in pixels alongside the frame
+dimensions. Normalization is intentionally deferred to the shared model
+preprocessing pipeline.
 """
 
 from __future__ import annotations
@@ -63,12 +64,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=yolocfg.YOLO_WEIGHTS,
         help="YOLO pose-model weights.",
-    )
-    parser.add_argument(
-        "--smooth-alpha",
-        type=float,
-        default=yolocfg.YOLO_SMOOTHING_ALPHA,
-        help="Temporal smoothing factor; 1.0 disables smoothing.",
     )
     parser.add_argument(
         "--max-frames",
@@ -170,43 +165,33 @@ def output_columns() -> list[str]:
         "time_seconds",
         "action_label",
         "pose_detected",
+        "bbox_detected",
         "people_detected",
-        "selected_person_index",
+        "boxes_detected",
+        "detection_index",
+        "person_index",
+        "box_index",
+        "frame_width_px",
+        "frame_height_px",
         "bbox_confidence",
-        "bbox_x1",
-        "bbox_y1",
-        "bbox_x2",
-        "bbox_y2",
+        "bbox_class_id",
+        "bbox_x1_px",
+        "bbox_y1_px",
+        "bbox_x2_px",
+        "bbox_y2_px",
     ]
     for joint_name in yolocfg.YOLO_KEYPOINT_NAMES:
         columns.extend(
             [
-                f"{joint_name}_x",
-                f"{joint_name}_y",
+                f"{joint_name}_x_px",
+                f"{joint_name}_y_px",
                 f"{joint_name}_confidence",
             ]
         )
     return columns
 
 
-def largest_person_index(boxes: list[dict], people_count: int) -> int | None:
-    if people_count == 0:
-        return None
-    if not boxes:
-        return 0
-
-    usable_boxes = boxes[:people_count]
-    return max(
-        range(len(usable_boxes)),
-        key=lambda index: max(
-            0.0,
-            (usable_boxes[index]["xyxy"][2] - usable_boxes[index]["xyxy"][0])
-            * (usable_boxes[index]["xyxy"][3] - usable_boxes[index]["xyxy"][1]),
-        ),
-    )
-
-
-def build_row(
+def build_rows(
     *,
     task_id: int,
     video_id: str,
@@ -217,50 +202,69 @@ def build_row(
     frame_height: int,
     people: list[dict],
     boxes: list[dict],
-) -> dict:
-    person_index = largest_person_index(boxes, len(people))
-    row = {
+) -> list[dict]:
+    base_row = {
         "task_id": task_id,
         "video_id": video_id,
         "frame_index": frame_index,
         "label_frame": frame_index + 1,
         "time_seconds": frame_index / fps,
         "action_label": action_label,
-        "pose_detected": int(person_index is not None),
+        "pose_detected": 0,
+        "bbox_detected": 0,
         "people_detected": len(people),
-        "selected_person_index": (
-            "" if person_index is None else people[person_index]["person_index"]
-        ),
+        "boxes_detected": len(boxes),
+        "detection_index": "",
+        "person_index": "",
+        "box_index": "",
+        "frame_width_px": frame_width,
+        "frame_height_px": frame_height,
         "bbox_confidence": "",
-        "bbox_x1": "",
-        "bbox_y1": "",
-        "bbox_x2": "",
-        "bbox_y2": "",
+        "bbox_class_id": "",
+        "bbox_x1_px": "",
+        "bbox_y1_px": "",
+        "bbox_x2_px": "",
+        "bbox_y2_px": "",
     }
 
-    if person_index is None:
-        return row
+    detection_count = max(len(people), len(boxes))
+    if detection_count == 0:
+        return [base_row]
 
-    if person_index < len(boxes):
-        box = boxes[person_index]
-        x1, y1, x2, y2 = box["xyxy"]
-        row.update(
-            {
-                "bbox_confidence": box["confidence"],
-                "bbox_x1": x1 / frame_width,
-                "bbox_y1": y1 / frame_height,
-                "bbox_x2": x2 / frame_width,
-                "bbox_y2": y2 / frame_height,
-            }
-        )
+    rows = []
+    for detection_index in range(detection_count):
+        row = dict(base_row)
+        row["detection_index"] = detection_index
 
-    for keypoint in people[person_index]["keypoints"]:
-        joint_name = keypoint["name"]
-        row[f"{joint_name}_x"] = keypoint["x"] / frame_width
-        row[f"{joint_name}_y"] = keypoint["y"] / frame_height
-        row[f"{joint_name}_confidence"] = keypoint["confidence"]
+        if detection_index < len(boxes):
+            box = boxes[detection_index]
+            x1, y1, x2, y2 = box["xyxy"]
+            row.update(
+                {
+                    "bbox_detected": 1,
+                    "box_index": box["box_index"],
+                    "bbox_confidence": box["confidence"],
+                    "bbox_class_id": box["class_id"],
+                    "bbox_x1_px": x1,
+                    "bbox_y1_px": y1,
+                    "bbox_x2_px": x2,
+                    "bbox_y2_px": y2,
+                }
+            )
 
-    return row
+        if detection_index < len(people):
+            person = people[detection_index]
+            row["pose_detected"] = 1
+            row["person_index"] = person["person_index"]
+            for keypoint in person["keypoints"]:
+                joint_name = keypoint["name"]
+                row[f"{joint_name}_x_px"] = keypoint["x"]
+                row[f"{joint_name}_y_px"] = keypoint["y"]
+                row[f"{joint_name}_confidence"] = keypoint["confidence"]
+
+        rows.append(row)
+
+    return rows
 
 
 def process_video(
@@ -269,9 +273,8 @@ def process_video(
     task: dict,
     video_path: Path,
     output_path: Path,
-    smooth_alpha: float,
     max_frames: int | None,
-) -> int:
+) -> tuple[int, int]:
     import cv2
 
     frame_labels, final_labeled_frame = build_frame_labels(task)
@@ -287,7 +290,7 @@ def process_video(
     video_id = video_path.stem
     temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
     frame_index = 0
-    previous_smoothed_keypoints = None
+    rows_written = 0
 
     try:
         with temporary_path.open("w", encoding="utf-8", newline="") as csv_file:
@@ -308,28 +311,23 @@ def process_video(
 
                 results = model(frame, verbose=False)
                 result = results[0]
-                previous_smoothed_keypoints = yoloutils.smooth_result_keypoints(
-                    result,
-                    previous_smoothed_keypoints,
-                    smooth_alpha,
-                )
                 people = yoloutils.keypoints_to_people(result)
                 boxes = yoloutils.boxes_to_detections(result)
                 frame_height, frame_width = frame.shape[:2]
 
-                writer.writerow(
-                    build_row(
-                        task_id=int(task["id"]),
-                        video_id=video_id,
-                        frame_index=frame_index,
-                        fps=fps,
-                        action_label=action_label,
-                        frame_width=frame_width,
-                        frame_height=frame_height,
-                        people=people,
-                        boxes=boxes,
-                    )
+                frame_rows = build_rows(
+                    task_id=int(task["id"]),
+                    video_id=video_id,
+                    frame_index=frame_index,
+                    fps=fps,
+                    action_label=action_label,
+                    frame_width=frame_width,
+                    frame_height=frame_height,
+                    people=people,
+                    boxes=boxes,
                 )
+                writer.writerows(frame_rows)
+                rows_written += len(frame_rows)
 
                 frame_index += 1
                 if frame_index % 100 == 0:
@@ -356,13 +354,11 @@ def process_video(
             f"{frame_index}."
         )
 
-    return frame_index
+    return frame_index, rows_written
 
 
 def main() -> None:
     args = parse_args()
-    if not 0.0 <= args.smooth_alpha <= 1.0:
-        raise ValueError("--smooth-alpha must be between 0.0 and 1.0")
     if args.max_frames is not None and args.max_frames < 1:
         raise ValueError("--max-frames must be at least 1")
 
@@ -385,15 +381,17 @@ def main() -> None:
             continue
 
         print(f"Processing task {task['id']}: {video_path.name}")
-        frames_written = process_video(
+        frames_written, rows_written = process_video(
             model=model,
             task=task,
             video_path=video_path,
             output_path=output_path,
-            smooth_alpha=args.smooth_alpha,
             max_frames=args.max_frames,
         )
-        print(f"  Saved {frames_written} rows to {output_path}")
+        print(
+            f"  Saved {rows_written} rows from {frames_written} frames "
+            f"to {output_path}"
+        )
 
 
 if __name__ == "__main__":
