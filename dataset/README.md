@@ -1,7 +1,20 @@
-# Dataset
+This folder is dedicated to everything related to the construction of a dataset aimed to train models to classify actions based from YOLO's tracked joints.
 
-This folder contains the datasets used to train the strike and guard
-classification models, track joints, and fine-tune YOLO weights.
+To understand the idea, we can simplify the approach in the following steps:
+
+1. Take video sources with CFR (Constant Frame Rate), whose Frame Rate is known, of people performing the actions of interest. (e.g. kicking, punching, or doing nothing). note: some videos taken with modern cameras can have variable frame rates (VFR) to optimize storage. We store our CFR videos at 30FPS at media\videos\30fps, after being preprocessed using media\videos\preprocess_fps.sh.
+2. Manually label the frames corresponding to each of the actions (e.g. frames 30 to 45 whole duration of punch, frames 66 to 90 for kicks, frames 46 to 65 doing nothing), and having the resulting ranges somewhere. We label out videos using LabelStudio, locally deployed in a Docker container using dataset\compose.yml, and export out labels in a minimal json format to dataset\classification.
+3. For the same videos, run YOLO model and extract the joints of the person performing the actions, ans save them along with the previously labelled classes for each frame. We achieve this running dataset\build_action_joint_dataset.py, and verify the joint YOLO eskeleton drawn and the classes labelled using dataset\verify_action_joint_dataset.ipynb.
+
+This way we could identify actions based only from YOLO's tracked joints. The benefits of this are:
+- simpler classification model (much faster training and inference, much less need for ground truth), since we would rely on strongly established YOLO model to detect people, removing surrounding noise. If we would train a classification model taking raw frames, it would have to account for all the pixels as input, and have lots of ground truth to distinguish the person from multiple backgrounds. YOLO would deal extracting the person from any background, and also the input would only likely be 48 variables (the x,y and confidence score of each of the 16 joints) instead of all the pixels in an image (at least 224x224)
+- Classification would deal with the action, and YOLO with assigning the action to the limb. In other words, we wouldnt have to duplicate action abels to account for each arm or each leg. e.g. if we label punches regardless of which arm extended, YOLO would provide the right label for the corresponding arm that was extended for the punch.
+- Video Augmentation. We can take the same CFR labelled videos and flip or slightly rotate them. YOLO would identify actions similarly but as if the action was made with the other arm or leg, and the classification labels would apply equally.
+
+
+# Lbel Studio Stup
+
+TODO: Update
 
 ## Video timeline labeling stack
 
@@ -117,6 +130,8 @@ Use [timeline-labeling-config.xml](./timeline-labeling-config.xml) in
 
 The configuration keeps the project-specific labels and enables the trainable
 timeline classifier:
+
+TODO: Update, note that guard labels were sepparated from striking labels in diofferent projects, so the xml below does not compile all, but there are 2 different.
 
 ```xml
 <View>

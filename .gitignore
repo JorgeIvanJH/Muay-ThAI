@@ -1,5 +1,5 @@
-
-
+dataset/classification/*.json
+dataset/jointswithactionlabels/*.csv
 media/images
 media/videos/raw
 media/videos/30fps

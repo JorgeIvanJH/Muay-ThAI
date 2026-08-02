@@ -1,23 +1,15 @@
-"""Build frame-level raw pose and action-label CSV files.
-
-Each output CSV contains one row per detected person/box per decoded video
-frame. Frames without detections retain one row with empty detection fields so
-the temporal sequence stays aligned. Subject selection is intentionally
-deferred to the shared model preprocessing pipeline.
-
-Joint and bounding-box coordinates are stored in pixels alongside the frame
-dimensions. Normalization is intentionally deferred to the shared model
-preprocessing pipeline.
 """
+Takes ground truth classification from dataset\classification (minimally processed Label Studio JSON) and joins it to YOLO pose detections.
 
-from __future__ import annotations
+Results are written to one CSV per video in dataset\jointswithactionlabels. See dataset\jointswithactionlabels\README.md for details on the output format.
+"""
 
 import argparse
 import csv
 import json
 import sys
 from pathlib import Path
-
+from __future__ import annotations
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -79,6 +71,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_annotation_tasks(path: Path) -> list[dict]:
+    """
+    Load a Label Studio JSON export and return the list of task records.
+
+    Each task is a dictionary with at least "id", "video", and "videoLabels"
+    keys. Each record represents one video and its associated action labels in
+    the JSON file at ``path``.
+    """
     with path.open(encoding="utf-8") as annotations_file:
         tasks = json.load(annotations_file)
 
@@ -88,10 +87,28 @@ def load_annotation_tasks(path: Path) -> list[dict]:
 
 
 def build_frame_labels(task: dict) -> tuple[dict[int, str], int]:
-    """Return the 1-based frame-to-label mapping and final labeled frame."""
+    """
+    Build a 1-based frame-to-label mapping for a task and return the highest
+    labeled frame index.
+
+    Example:
+        {
+            1: "guard_down",
+            2: "guard_down",
+            ...,
+            7657: "guard_up",
+        }
+
+    Raises ValueError if:
+        - a range has no label
+        - a frame range is invalid
+        - labels overlap on the same frame
+        - no labels are present
+        - there are gaps in the labeled frames
+    """
     labels: dict[int, str] = {}
 
-    for result in task.get("videoLabels", []):
+    for result in task.get("videoLabels", []): # Each result is a dict with "ranges" of frames (e.g., {"start": 82, "end": 192}) for "timelinelabels" (e.g., ["guard_down"]) keys.
         action_labels = result.get("timelinelabels", [])
         if len(action_labels) != 1:
             raise ValueError(
@@ -131,7 +148,15 @@ def build_frame_labels(task: dict) -> tuple[dict[int, str], int]:
 
 
 def resolve_video_path(label_studio_video: str, video_dir: Path) -> Path:
-    """Resolve either the exported upload name or its prefix-free CFR name."""
+    """
+    Resolve the path to the original CFR video source for a Label Studio task.
+
+    The task's JSON data contains a video path under the ``video`` key, for
+    example ``/data/upload/1/9687240c-20260728_095912_30fps.mp4``. Here we attempt to find the corresponding video file in ``video_dir``.
+
+    Raises:
+        FileNotFoundError: If no matching video can be found in ``video_dir``.
+    """
     exported_name = Path(label_studio_video).name
     exact_path = video_dir / exported_name
     if exact_path.is_file():
@@ -157,6 +182,9 @@ def resolve_video_path(label_studio_video: str, video_dir: Path) -> Path:
 
 
 def output_columns() -> list[str]:
+    """
+    Column names for the output CSV file. See dataset\jointswithactionlabels\README.md for details on the output format.
+    """
     columns = [
         "task_id",
         "video_id",
@@ -203,11 +231,15 @@ def build_rows(
     people: list[dict],
     boxes: list[dict],
 ) -> list[dict]:
+    """
+    Build a list of rows for a single frame, one row per detected person or bounding box.
+    See dataset\jointswithactionlabels\README.md for details on the output format.
+    """
     base_row = {
         "task_id": task_id,
         "video_id": video_id,
-        "frame_index": frame_index,
-        "label_frame": frame_index + 1,
+        "frame_index": frame_index, # 0-based index for OpenCV frames
+        "label_frame": frame_index + 1, # 1-based index for action labels from Label Studio
         "time_seconds": frame_index / fps,
         "action_label": action_label,
         "pose_detected": 0,
@@ -232,7 +264,7 @@ def build_rows(
         return [base_row]
 
     rows = []
-    for detection_index in range(detection_count):
+    for detection_index in range(detection_count): # For each person detected
         row = dict(base_row)
         row["detection_index"] = detection_index
 
@@ -275,6 +307,12 @@ def process_video(
     output_path: Path,
     max_frames: int | None,
 ) -> tuple[int, int]:
+    """
+    Process a single video, running YOLO pose detection on each frame and joining the results to the action labels from the task.
+    Results are written to a temporary CSV file, which is renamed to the final output path on success. Returns the number of frames processed and the number of rows written to the CSV.
+    Raises ValueError if any frame is missing an action label.
+    """
+
     import cv2
 
     frame_labels, final_labeled_frame = build_frame_labels(task)
@@ -285,11 +323,12 @@ def process_video(
     fps = capture.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
         fps = 30.0
+    assert fps == 30.0, f"Expected 30fps video, got {fps} for {video_path}"
 
     reported_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
     video_id = video_path.stem
     temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
-    frame_index = 0
+    frame_index = 0 # 0-based index for OpenCV frames
     rows_written = 0
 
     try:
@@ -302,7 +341,7 @@ def process_video(
                 if not success:
                     break
 
-                label_frame = frame_index + 1
+                label_frame = frame_index + 1 # 1-based index for action labels from Label Studio
                 action_label = frame_labels.get(label_frame)
                 if action_label is None:
                     raise ValueError(
