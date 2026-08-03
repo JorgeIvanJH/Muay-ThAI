@@ -41,3 +41,18 @@ conda run -n muay-thai python models/action_detection/TCN/train.py `
 
 Weights and the preprocessing/class configuration needed to load them are
 written beneath each model's `weights` directory.
+
+Run real-time inference from the default laptop webcam and show the overlay:
+
+    conda run -n muay-thai python models/action_detection/TCN/infer.py --source 0 --display
+
+Use LightGBM on a video file without opening a preview window:
+
+    conda run -n muay-thai python models/action_detection/LightGBM/infer.py --source media/videos/30fps/example.mp4
+
+Both entry points time-resample file inputs to 30 FPS and write 30-FPS CFR
+annotated MP4 and JSONL prediction files beneath the output folder. Webcam
+capture is requested and paced at 30 FPS; its unannotated frames are
+additionally written beneath media/videos/raw. Actual live throughput still
+depends on whether the machine can run YOLO pose inference and the classifier
+at 30 FPS. Use q to stop a --display session.
