@@ -79,3 +79,10 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    """
+    conda run -n muay-thai python models/action_detection/TCN/infer.py `
+    --source 0 `
+    --device cuda `
+    --yolo-device 0 `
+    --display
+    """

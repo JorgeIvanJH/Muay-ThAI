@@ -427,7 +427,7 @@ def run_action_inference(
     if not capture.isOpened():
         raise RuntimeError(f"Could not open input source: {args.source}")
     if webcam:
-        capture.set(cv2.CAP_PROP_FPS, TARGET_FPS)
+        capture.set(cv2.CAP_PROP_FPS, TARGET_FPS) # Request 30 FPS capture from the webcam
         if args.camera_width is not None:
             capture.set(cv2.CAP_PROP_FRAME_WIDTH, args.camera_width)
         if args.camera_height is not None:

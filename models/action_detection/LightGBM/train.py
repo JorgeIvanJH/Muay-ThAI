@@ -46,10 +46,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--coordinate-clip", type=float, default=5.0)
     parser.add_argument(
         "--train-videos",
-        nargs=2,
-        metavar=("VIDEO_1", "VIDEO_2"),
+        nargs="+",
+        metavar="VIDEO",
     )
-    parser.add_argument("--val-video")
+    parser.add_argument(
+        "--val-videos",
+        "--val-video",
+        dest="validation_videos",
+        nargs="+",
+        metavar="VIDEO",
+    )
+    parser.add_argument("--validation-fraction", type=float, default=0.2)
     parser.add_argument("--n-estimators", type=int, default=500)
     parser.add_argument("--random-state", type=int, default=42)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
@@ -66,7 +73,8 @@ def main() -> None:
     split = choose_video_split(
         sequences,
         train_video_ids=args.train_videos,
-        validation_video_id=args.val_video,
+        validation_video_ids=args.validation_videos,
+        validation_fraction=args.validation_fraction,
     )
     class_names = class_names_from_training(
         sequences, split.train_video_ids
@@ -80,7 +88,7 @@ def main() -> None:
     )
     validation_windows, validation_targets = build_window_dataset(
         sequences,
-        [split.validation_video_id],
+        split.validation_video_ids,
         window_size=args.window_size,
         class_names=class_names,
     )
@@ -91,7 +99,7 @@ def main() -> None:
     )
 
     print(f"Training videos: {', '.join(split.train_video_ids)}")
-    print(f"Validation video: {split.validation_video_id}")
+    print(f"Validation videos: {', '.join(split.validation_video_ids)}")
     if split.ignored_video_ids:
         print(f"Ignored videos: {', '.join(split.ignored_video_ids)}")
     print(f"Classes: {', '.join(class_names)}")
@@ -146,7 +154,7 @@ def main() -> None:
             "confidence_threshold": args.confidence_threshold,
             "coordinate_clip": args.coordinate_clip,
             "train_video_ids": split.train_video_ids,
-            "validation_video_id": split.validation_video_id,
+            "validation_video_ids": split.validation_video_ids,
         },
         args.output,
     )

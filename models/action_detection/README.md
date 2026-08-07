@@ -10,8 +10,9 @@ Both models use the raw per-detection CSV files in
 5. Build left-padded causal windows ending at the current frame.
 
 No angles, velocities, or manually engineered joint-distance features are
-used. By default, the first two sorted video IDs are used for training and the
-third for validation.
+used. By default, sorted whole-video IDs are split deterministically: the
+final 20% are used for validation and all preceding videos for training. At
+least one video is kept in each group.
 
 Update the Conda environment after dependency changes:
 
@@ -35,9 +36,11 @@ Choose the split explicitly when more videos are available:
 
 ```powershell
 conda run -n muay-thai python models/action_detection/TCN/train.py `
-  --train-videos video_1 video_2 `
-  --val-video video_3
+  --train-videos video_1 video_2 video_3 `
+  --val-videos video_4 video_5
 ```
+
+Change the automatic validation proportion with `--validation-fraction`.
 
 Weights and the preprocessing/class configuration needed to load them are
 written beneath each model's `weights` directory.

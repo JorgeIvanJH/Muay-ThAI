@@ -41,12 +41,12 @@ class PoseSequence:
     timestamps: np.ndarray
 
 
-@dataclass(frozen=True) # Immutable and hashable because all fields are hashable
+@dataclass(frozen=True)  # Immutable and hashable because all fields are hashable
 class VideoSplit:
     """Whole-video training and validation split."""
 
-    train_video_ids: tuple[str, str]
-    validation_video_id: str
+    train_video_ids: tuple[str, ...]
+    validation_video_ids: tuple[str, ...]
     ignored_video_ids: tuple[str, ...] = ()
 
 
@@ -123,8 +123,7 @@ def select_largest_person(frames: pd.DataFrame) -> pd.DataFrame:
     """
     Return one selected detection per video frame.
 
-    Rows with a pose are preferred. Among them, the largest bounding-box area
-    wins, followed by bounding-box confidence and the original detection index.
+    Rows with a pose are preferred. Among them, the largest bounding-box area wins, followed by bounding-box confidence and the original detection index.
     A frame with no detections keeps its empty raw row.
     """
 
@@ -201,7 +200,7 @@ def normalize_selected_frames(
     """
     Convert selected raw poses to body-centred joint features.
     
-    Returns a 3D array of shape [frames, joints, channels], where channels are (x_body, y_body, confidence, valid). The x_body and y_body coordinates are normalized to the torso size and clipped to [-coordinate_clip, coordinate_clip].
+    Returns a 3D array of shape [frames, joints, channels], where channels are (x_body, y_body, confidence, valid). The x_body and y_body coordinates are normalized to the torso size and clipped to [-coordinate_clip, coordinate_clip]. coordinate_clip represents the maximum number of torso lengths a joint can be from the body center. 
 
     The confidence channel is clipped to [0, 1], and the valid channel is 1 for valid joints and 0 for invalid joints.
     
@@ -364,30 +363,57 @@ def choose_video_split(
     available_video_ids: Iterable[str],
     *,
     train_video_ids: Sequence[str] | None = None,
-    validation_video_id: str | None = None,
+    validation_video_ids: Sequence[str] | None = None,
+    validation_fraction: float = 0.2,
 ) -> VideoSplit:
-    """Choose exactly two complete videos for training and one for validation."""
+    """
+    Split complete videos into training and validation groups.
+
+    If no explicit IDs are supplied, sorted video IDs are split
+    deterministically: the final validation_fraction are used for validation
+    and all preceding videos are used for training. At least one video is kept
+    in each group. Otherwise, both non-empty ID groups must be supplied.
+
+    Any available videos omitted from an explicit split are returned in
+    ignored_video_ids.
+    """
 
     available = tuple(sorted(set(available_video_ids)))
-    if len(available) < 3:
-        raise ValueError("At least three videos are required")
+    if len(available) < 2:
+        raise ValueError("At least two videos are required")
+    if not 0.0 < validation_fraction < 1.0:
+        raise ValueError("validation_fraction must be between 0 and 1")
 
-    if train_video_ids is None and validation_video_id is None:
-        train = (available[0], available[1])
-        validation = available[2]
-    elif train_video_ids is not None and validation_video_id is not None:
-        if len(train_video_ids) != 2:
-            raise ValueError("Exactly two --train-videos values are required")
-        train = (str(train_video_ids[0]), str(train_video_ids[1]))
-        validation = str(validation_video_id)
+    if train_video_ids is None and validation_video_ids is None:
+        validation_count = min(
+            len(available) - 1,
+            max(1, int(np.ceil(len(available) * validation_fraction))),
+        )
+        train = available[:-validation_count]
+        validation = available[-validation_count:]
+    elif train_video_ids is not None and validation_video_ids is not None:
+        train = tuple(str(video_id) for video_id in train_video_ids)
+        validation = tuple(str(video_id) for video_id in validation_video_ids)
+        if not train:
+            raise ValueError("At least one training video is required")
+        if not validation:
+            raise ValueError("At least one validation video is required")
+        if len(set(train)) != len(train):
+            raise ValueError("Training video IDs must not contain duplicates")
+        if len(set(validation)) != len(validation):
+            raise ValueError("Validation video IDs must not contain duplicates")
     else:
         raise ValueError(
-            "Specify both train_video_ids and validation_video_id, or neither"
+            "Specify both train_video_ids and validation_video_ids, or neither"
         )
 
-    chosen = (*train, validation)
-    if len(set(chosen)) != 3:
-        raise ValueError("Training and validation videos must be distinct")
+    overlap = sorted(set(train) & set(validation))
+    if overlap:
+        raise ValueError(
+            "Training and validation videos must be distinct; overlap: "
+            + ", ".join(overlap)
+        )
+    chosen = (*train, *validation)
     unknown = sorted(set(chosen) - set(available))
     if unknown:
         raise ValueError(f"Unknown video IDs: {', '.join(unknown)}")
@@ -400,6 +426,11 @@ def class_names_from_training(
     sequences: dict[str, PoseSequence],
     train_video_ids: Sequence[str],
 ) -> tuple[str, ...]:
+    """
+    Determine the unique action labels present in the training videos.
+    Returns a tuple of sorted unique class names.
+    Raises ValueError if any training video ID is not in sequences.
+    """
     labels = np.concatenate(
         [sequences[video_id].labels for video_id in train_video_ids]
     )
@@ -441,6 +472,9 @@ def causal_windows(features: np.ndarray, window_size: int) -> np.ndarray:
         Prediction at frame 2: [0,  F0, F1, F2]
         Prediction at frame 3: [F0, F1, F2, F3]
         Prediction at frame 4: [F1, F2, F3, F4]
+
+    Returns a 3D array of shape [frames, window_size, features].
+    Raises ValueError if window_size < 1 or if features is not 2D.
     """
 
     if window_size < 1:
@@ -489,7 +523,8 @@ def balanced_class_weights(
 ) -> np.ndarray:
     """
     Compute class weights inversely proportional to class frequencies for balanced training.
-    Returns a 1D array of shape [class_count] containing the weight for each class. Raises ValueError if any class has zero occurrences in encoded_labels.
+    Returns a 1D array of shape [class_count] containing the weight for each class. 
+    Raises ValueError if any class has zero occurrences in encoded_labels.
     """
     counts = np.bincount(encoded_labels, minlength=class_count)
     if np.any(counts == 0):
