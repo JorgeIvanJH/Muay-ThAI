@@ -17,11 +17,20 @@ from models.action_detection.inference import (
     ActionModelRuntime,
     build_inference_parser,
     run_action_inference,
+    validate_model_bundle,
 )
 from models.action_detection.TCN.model import TCNClassifier
 
 
-DEFAULT_WEIGHTS = Path(__file__).resolve().parent / "weights" / "tcn_action.pt"
+WEIGHTS_DIR = Path(__file__).resolve().parent / "weights"
+TASK_GUARD_WEIGHTS = WEIGHTS_DIR / "tcn_guard.pt"
+LEGACY_GUARD_WEIGHTS = WEIGHTS_DIR / "tcn_action.pt"
+DEFAULT_GUARD_WEIGHTS = (
+    TASK_GUARD_WEIGHTS
+    if TASK_GUARD_WEIGHTS.is_file()
+    else LEGACY_GUARD_WEIGHTS
+)
+DEFAULT_STRIKING_WEIGHTS = WEIGHTS_DIR / "tcn_striking.pt"
 
 
 def _select_device(requested: str) -> torch.device:
@@ -32,7 +41,12 @@ def _select_device(requested: str) -> torch.device:
     return torch.device(requested)
 
 
-def load_runtime(weights: Path, device: torch.device) -> ActionModelRuntime:
+def load_runtime(
+    weights: Path,
+    device: torch.device,
+    *,
+    classification_task: str,
+) -> ActionModelRuntime:
     if not weights.is_file():
         raise FileNotFoundError(f"TCN weights not found: {weights}")
 
@@ -41,7 +55,11 @@ def load_runtime(weights: Path, device: torch.device) -> ActionModelRuntime:
     model.load_state_dict(bundle["state_dict"])
     model.to(device)
     model.eval()
-    class_names = tuple(str(name) for name in bundle["class_names"])
+    class_names = validate_model_bundle(
+        bundle,
+        classification_task=classification_task,
+        source=weights,
+    )
 
     def predict_probabilities(window: np.ndarray) -> np.ndarray:
         inputs = torch.from_numpy(window[None]).to(device)
@@ -51,6 +69,7 @@ def load_runtime(weights: Path, device: torch.device) -> ActionModelRuntime:
 
     return ActionModelRuntime(
         model_name="TCN",
+        classification_task=classification_task,
         class_names=class_names,
         window_size=int(bundle["window_size"]),
         confidence_threshold=float(bundle["confidence_threshold"]),
@@ -61,8 +80,11 @@ def load_runtime(weights: Path, device: torch.device) -> ActionModelRuntime:
 
 def main() -> None:
     parser = build_inference_parser(
-        description="Run causal TCN action inference at 30 FPS CFR.",
-        default_weights=DEFAULT_WEIGHTS,
+        description=(
+            "Run guard and striking TCN inference together at 30 FPS CFR."
+        ),
+        default_guard_weights=DEFAULT_GUARD_WEIGHTS,
+        default_striking_weights=DEFAULT_STRIKING_WEIGHTS,
     )
     parser.add_argument(
         "--device",
@@ -72,17 +94,20 @@ def main() -> None:
     )
     args = parser.parse_args()
     device = _select_device(args.device)
-    runtime = load_runtime(args.weights, device)
+    guard_runtime = load_runtime(
+        args.guard_weights,
+        device,
+        classification_task="guard",
+    )
+    striking_runtime = load_runtime(
+        args.striking_weights,
+        device,
+        classification_task="striking",
+    )
+
     print(f"TCN device: {device}")
-    run_action_inference(args, runtime)
+    run_action_inference(args, (guard_runtime, striking_runtime))
 
 
 if __name__ == "__main__":
     main()
-    """
-    conda run -n muay-thai python models/action_detection/TCN/infer.py `
-    --source 0 `
-    --device cuda `
-    --yolo-device 0 `
-    --display
-    """

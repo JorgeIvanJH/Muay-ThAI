@@ -15,6 +15,12 @@ import numpy as np
 from lightgbm import early_stopping, log_evaluation
 from sklearn.metrics import accuracy_score, classification_report, f1_score
 
+from models.action_detection.config import (
+    TASK_CLASS_NAMES,
+    class_names_for_task,
+    resolve_classification_task,
+    validate_task_labels,
+)
 from models.action_detection.LightGBM.model import (
     build_model,
     save_model_bundle,
@@ -29,7 +35,8 @@ from models.action_detection.preprocessing import (
 )
 
 
-DEFAULT_OUTPUT = Path(__file__).resolve().parent / "weights" / "lightgbm_action.joblib"
+DEFAULT_DATASET = DEFAULT_DATASET_DIR / "guard"
+WEIGHTS_DIR = Path(__file__).resolve().parent / "weights"
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,8 +46,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset-dir",
         type=Path,
-        default=DEFAULT_DATASET_DIR,
+        default=DEFAULT_DATASET,
     )
+    parser.add_argument("--task", choices=tuple(TASK_CLASS_NAMES))
     parser.add_argument("--window-size", type=int, default=32)
     parser.add_argument("--confidence-threshold", type=float, default=0.25)
     parser.add_argument("--coordinate-clip", type=float, default=5.0)
@@ -59,14 +67,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validation-fraction", type=float, default=0.2)
     parser.add_argument("--n-estimators", type=int, default=500)
     parser.add_argument("--random-state", type=int, default=42)
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Defaults to weights/lightgbm_<task>.joblib.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    classification_task = resolve_classification_task(
+        args.task,
+        args.dataset_dir,
+    )
+    output_path = (
+        args.output
+        or WEIGHTS_DIR / f"lightgbm_{classification_task}.joblib"
+    )
     sequences = load_pose_sequences(
         args.dataset_dir,
+        classification_task=classification_task,
         confidence_threshold=args.confidence_threshold,
         coordinate_clip=args.coordinate_clip,
     )
@@ -78,6 +99,11 @@ def main() -> None:
     )
     class_names = class_names_from_training(
         sequences, split.train_video_ids
+    )
+    validate_task_labels(
+        classification_task,
+        class_names,
+        source="training split",
     )
 
     train_windows, train_targets = build_window_dataset(
@@ -98,6 +124,10 @@ def main() -> None:
         len(validation_windows), -1
     )
 
+    print(
+        f"Classification task: {classification_task} "
+        f"({', '.join(class_names_for_task(classification_task))})"
+    )
     print(f"Training videos: {', '.join(split.train_video_ids)}")
     print(f"Validation videos: {', '.join(split.validation_video_ids)}")
     if split.ignored_video_ids:
@@ -153,10 +183,11 @@ def main() -> None:
             "window_size": args.window_size,
             "confidence_threshold": args.confidence_threshold,
             "coordinate_clip": args.coordinate_clip,
+            "classification_task": classification_task,
             "train_video_ids": split.train_video_ids,
             "validation_video_ids": split.validation_video_ids,
         },
-        args.output,
+        output_path,
     )
     print(f"Saved weights to {output_path}")
 

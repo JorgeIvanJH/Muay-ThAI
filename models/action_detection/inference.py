@@ -6,7 +6,7 @@ import argparse
 import json
 import time
 from collections import deque
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,7 +16,11 @@ import pandas as pd
 from ultralytics import YOLO
 
 from models import utils as modelutils
-from models.action_detection.config import CLASS_COLORS, SKELETON_EDGES
+from models.action_detection.config import (
+    CLASS_COLORS,
+    SKELETON_EDGES,
+    validate_task_labels,
+)
 from models.action_detection.preprocessing import (
     causal_windows,
     normalize_selected_frames,
@@ -37,26 +41,82 @@ class ActionModelRuntime:
     """Loaded classifier plus the preprocessing settings saved at training."""
 
     model_name: str
+    classification_task: str
     class_names: tuple[str, ...]
     window_size: int
     confidence_threshold: float
     coordinate_clip: float
     predict_probabilities: Callable[[np.ndarray], np.ndarray]
+    is_stub: bool = False
+
+
+@dataclass(frozen=True)
+class ActionPrediction:
+    """
+    One task model's prediction for the current frame.
+    """
+
+    classification_task: str
+    model_name: str
+    class_names: tuple[str, ...]
+    class_name: str
+    probability: float
+    probabilities: np.ndarray
+    is_stub: bool
+
+
+def validate_model_bundle(
+    bundle: dict,
+    *,
+    classification_task: str,
+    source: Path,
+) -> tuple[str, ...]:
+    """
+    Validate task metadata and classes in a saved model bundle.
+
+    Raises ValueError if the bundle's task or classes are invalid.
+    """
+
+    saved_task = bundle.get("classification_task")
+    if saved_task is not None and str(saved_task) != classification_task:
+        raise ValueError(
+            f"{source} was trained for task {saved_task!r}, not "
+            f"{classification_task!r}"
+        )
+    class_names = tuple(str(name) for name in bundle["class_names"])
+    validate_task_labels(
+        classification_task,
+        class_names,
+        source=str(source),
+    )
+    return class_names
 
 
 def build_inference_parser(
     *,
     description: str,
-    default_weights: Path,
+    default_guard_weights: Path,
+    default_striking_weights: Path,
 ) -> argparse.ArgumentParser:
-    """Create the arguments shared by the TCN and LightGBM entry points."""
+    """
+    Create the arguments shared by the TCN and LightGBM entry points.
+    """
 
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
-        "--weights",
+        "--guard-weights",
         type=Path,
-        default=default_weights,
-        help="Trained action-classifier bundle.",
+        default=default_guard_weights,
+        help="Trained guard-classifier bundle.",
+    )
+    parser.add_argument(
+        "--striking-weights",
+        type=Path,
+        default=default_striking_weights,
+        help=(
+            "Trained striking-classifier bundle. A background-only stub is "
+            "used while this file does not exist."
+        ),
     )
     parser.add_argument(
         "--pose-model",
@@ -301,42 +361,53 @@ def _raw_detection_rows(
     return pd.DataFrame(rows)
 
 
-def _selected_pose_and_features(
+def _select_pose(
     result,
     *,
     frame_index: int,
     frame: np.ndarray,
-    confidence_threshold: float,
-    coordinate_clip: float,
-) -> tuple[pd.Series, np.ndarray]:
+) -> pd.DataFrame:
+    """
+    Select the largest person from one YOLO result and return its raw row(s).
+
+    If no person is detected, return a single row with NaN keypoints.
+    """
     raw_rows = _raw_detection_rows(
         result,
         frame_index=frame_index,
         frame=frame,
     )
-    selected = select_largest_person(raw_rows).reset_index(drop=True)
-    features = normalize_selected_frames(
-        selected,
-        confidence_threshold=confidence_threshold,
-        coordinate_clip=coordinate_clip,
-    )
-    return selected.iloc[0], features[0]
+    return select_largest_person(raw_rows).reset_index(drop=True)
 
 
 def draw_action_overlay(
     frame: np.ndarray,
     pose: pd.Series,
     *,
-    class_name: str,
-    probability: float,
+    predictions: Sequence[ActionPrediction],
     confidence_threshold: float,
     processing_fps: float,
 ) -> np.ndarray:
-    """Draw the selected pose and action class on a BGR OpenCV frame."""
+    """
+    Draw the selected pose and both task predictions on a BGR frame.
+
+    Returns a copy of the frame with the overlay.
+    """
 
     output = frame.copy()
     height, width = output.shape[:2]
-    color_rgb = CLASS_COLORS.get(class_name, (255, 200, 0))
+    active_prediction = next(
+        (
+            prediction
+            for prediction in reversed(predictions)
+            if prediction.class_name != "background"
+        ),
+        predictions[0],
+    )
+    color_rgb = CLASS_COLORS.get(
+        active_prediction.class_name,
+        CLASS_COLORS["background"],
+    )
     color = tuple(int(channel) for channel in reversed(color_rgb))
     points: dict[str, tuple[int, int]] = {}
 
@@ -364,26 +435,47 @@ def draw_action_overlay(
         cv2.circle(output, point, 5, (255, 255, 255), -1)
         cv2.circle(output, point, 5, color, 2)
 
-    label = f"{class_name}  {probability:.1%}"
+    header_height = 36 * len(predictions) + 34
+    cv2.rectangle(
+        output,
+        (0, 0),
+        (width, min(height, header_height)),
+        (20, 20, 20),
+        -1,
+    )
+    for prediction_index, prediction in enumerate(predictions):
+        prediction_color_rgb = CLASS_COLORS.get(
+            prediction.class_name,
+            (255, 200, 0),
+        )
+        prediction_color = tuple(
+            int(channel) for channel in reversed(prediction_color_rgb)
+        )
+        stub_text = " [STUB]" if prediction.is_stub else ""
+        label = (
+            f"{prediction.classification_task.capitalize()}: "
+            f"{prediction.class_name}  {prediction.probability:.1%}"
+            f"{stub_text}"
+        )
+        cv2.putText(
+            output,
+            label,
+            (16, 30 + prediction_index * 36),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.78,
+            prediction_color,
+            2,
+            cv2.LINE_AA,
+        )
+
     status = (
         f"processing {processing_fps:.1f} FPS | "
         f"people {int(pose.get('people_detected', 0) or 0)}"
     )
-    cv2.rectangle(output, (0, 0), (width, 76), (20, 20, 20), -1)
-    cv2.putText(
-        output,
-        label,
-        (16, 32),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.9,
-        color,
-        2,
-        cv2.LINE_AA,
-    )
     cv2.putText(
         output,
         status,
-        (16, 62),
+        (16, header_height - 10),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.55,
         (220, 220, 220),
@@ -395,28 +487,51 @@ def draw_action_overlay(
 
 def run_action_inference(
     args: argparse.Namespace,
-    runtime: ActionModelRuntime,
+    runtimes: Sequence[ActionModelRuntime],
 ) -> None:
-    """Run shared YOLO-pose and action-classifier inference."""
+    """
+    Run one YOLO pose pass and both action classifiers on every frame.
+
+    Writes annotated video and JSONL predictions to disk, optionally displaying the annotated stream in real time. 
+
+    Raises ValueError if the arguments or runtimes are invalid.
+    Raises RuntimeError if the input source cannot be opened.
+    """
 
     _validate_arguments(args)
-    if runtime.window_size < 1:
-        raise ValueError("The saved window_size must be at least 1")
-    if not runtime.class_names:
-        raise ValueError("The saved model contains no class names")
+    runtimes = tuple(runtimes)
+    runtime_tasks = tuple(runtime.classification_task for runtime in runtimes)
+    if set(runtime_tasks) != {"guard", "striking"} or len(runtimes) != 2:
+        raise ValueError(
+            "Inference requires exactly one guard and one striking runtime"
+        )
+    for runtime in runtimes:
+        if runtime.window_size < 1:
+            raise ValueError(
+                f"{runtime.model_name} window_size must be at least 1"
+            )
+        validate_task_labels(
+            runtime.classification_task,
+            runtime.class_names,
+            source=runtime.model_name,
+        )
 
     capture_source, source_label = modelutils.parse_source(args.source)
     webcam = isinstance(capture_source, int)
+    model_label = "+".join(
+        f"{runtime.model_name}-{runtime.classification_task}"
+        for runtime in runtimes
+    )
     output_paths = modelutils.build_output_paths(
         args.output,
         source_label,
-        args.weights,
+        model_label,
     )
     raw_video_path = (
         _webcam_raw_path(
             args.raw_output,
             source_label,
-            runtime.model_name,
+            model_label,
             output_paths["run_dir"],
         )
         if webcam
@@ -441,7 +556,10 @@ def run_action_inference(
             )
 
     pose_model = YOLO(str(args.pose_model))
-    history: deque[np.ndarray] = deque(maxlen=runtime.window_size)
+    histories = {
+        runtime.classification_task: deque(maxlen=runtime.window_size)
+        for runtime in runtimes
+    }
     annotated_writer: cv2.VideoWriter | None = None
     raw_writer: cv2.VideoWriter | None = None
     processed_frames = 0
@@ -469,45 +587,65 @@ def run_action_inference(
                 if args.yolo_device:
                     yolo_arguments["device"] = args.yolo_device
                 result = pose_model(frame, **yolo_arguments)[0]
-                pose, current_features = _selected_pose_and_features(
+                selected_pose = _select_pose(
                     result,
                     frame_index=frame_index,
                     frame=frame,
-                    confidence_threshold=runtime.confidence_threshold,
-                    coordinate_clip=runtime.coordinate_clip,
                 )
-                history.append(current_features)
-                history_features = np.stack(tuple(history)).astype(
-                    np.float32,
-                    copy=False,
-                )
-                window = causal_windows(
-                    history_features,
-                    runtime.window_size,
-                )[-1]
-                probabilities = np.asarray(
-                    runtime.predict_probabilities(window),
-                    dtype=np.float32,
-                ).reshape(-1)
-                if probabilities.shape != (len(runtime.class_names),):
-                    raise ValueError(
-                        "Classifier returned "
-                        f"{probabilities.shape} probabilities for "
-                        f"{len(runtime.class_names)} classes"
+                pose = selected_pose.iloc[0]
+                frame_predictions = []
+                for runtime in runtimes:
+                    current_features = normalize_selected_frames(
+                        selected_pose,
+                        confidence_threshold=runtime.confidence_threshold,
+                        coordinate_clip=runtime.coordinate_clip,
+                    )[0]
+                    history = histories[runtime.classification_task]
+                    history.append(current_features)
+                    history_features = np.stack(tuple(history)).astype(
+                        np.float32,
+                        copy=False,
                     )
-                if not np.all(np.isfinite(probabilities)):
-                    raise ValueError("Classifier returned non-finite probabilities")
+                    window = causal_windows(
+                        history_features,
+                        runtime.window_size,
+                    )[-1]
+                    probabilities = np.asarray(
+                        runtime.predict_probabilities(window),
+                        dtype=np.float32,
+                    ).reshape(-1)
+                    if probabilities.shape != (len(runtime.class_names),):
+                        raise ValueError(
+                            f"{runtime.model_name} returned "
+                            f"{probabilities.shape} probabilities for "
+                            f"{len(runtime.class_names)} classes"
+                        )
+                    if not np.all(np.isfinite(probabilities)):
+                        raise ValueError(
+                            f"{runtime.model_name} returned non-finite "
+                            "probabilities"
+                        )
+                    class_index = int(np.argmax(probabilities))
+                    frame_predictions.append(
+                        ActionPrediction(
+                            classification_task=runtime.classification_task,
+                            model_name=runtime.model_name,
+                            class_names=runtime.class_names,
+                            class_name=runtime.class_names[class_index],
+                            probability=float(probabilities[class_index]),
+                            probabilities=probabilities,
+                            is_stub=runtime.is_stub,
+                        )
+                    )
 
-                class_index = int(np.argmax(probabilities))
-                class_name = runtime.class_names[class_index]
-                probability = float(probabilities[class_index])
                 elapsed = max(time.perf_counter() - inference_started, 1e-9)
                 annotated_frame = draw_action_overlay(
                     frame,
                     pose,
-                    class_name=class_name,
-                    probability=probability,
-                    confidence_threshold=runtime.confidence_threshold,
+                    predictions=frame_predictions,
+                    confidence_threshold=min(
+                        runtime.confidence_threshold for runtime in runtimes
+                    ),
                     processing_fps=1.0 / elapsed,
                 )
 
@@ -522,11 +660,22 @@ def run_action_inference(
                         {
                             "frame_index": frame_index,
                             "time_seconds": timestamp,
-                            "class_name": class_name,
-                            "confidence": probability,
-                            "class_probabilities": {
-                                name: float(probabilities[index])
-                                for index, name in enumerate(runtime.class_names)
+                            "predictions": {
+                                prediction.classification_task: {
+                                    "model_name": prediction.model_name,
+                                    "is_stub": prediction.is_stub,
+                                    "class_name": prediction.class_name,
+                                    "confidence": prediction.probability,
+                                    "class_probabilities": {
+                                        name: float(
+                                            prediction.probabilities[index]
+                                        )
+                                        for index, name in enumerate(
+                                            prediction.class_names
+                                        )
+                                    },
+                                }
+                                for prediction in frame_predictions
                             },
                             "pose_detected": bool(pose["pose_detected"]),
                             "people_detected": int(pose["people_detected"]),
@@ -551,7 +700,7 @@ def run_action_inference(
                         if display_delay > 0:
                             time.sleep(display_delay)
                     cv2.imshow(
-                        f"Muay-ThAI - {runtime.model_name}",
+                        "Muay-ThAI - guard + striking",
                         annotated_frame,
                     )
                     if cv2.waitKey(1) & 0xFF == ord("q"):

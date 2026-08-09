@@ -19,6 +19,12 @@ from sklearn.metrics import accuracy_score, classification_report, f1_score
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from models.action_detection.config import (
+    TASK_CLASS_NAMES,
+    class_names_for_task,
+    resolve_classification_task,
+    validate_task_labels,
+)
 from models.action_detection.TCN.model import TCNClassifier
 from models.action_detection.preprocessing import (
     DEFAULT_DATASET_DIR,
@@ -31,7 +37,8 @@ from models.action_detection.preprocessing import (
 )
 
 
-DEFAULT_OUTPUT = Path(__file__).resolve().parent / "weights" / "tcn_action.pt"
+DEFAULT_DATASET = DEFAULT_DATASET_DIR / "guard"
+WEIGHTS_DIR = Path(__file__).resolve().parent / "weights"
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,8 +48,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset-dir",
         type=Path,
-        default=DEFAULT_DATASET_DIR,
+        default=DEFAULT_DATASET,
     )
+    parser.add_argument("--task", choices=tuple(TASK_CLASS_NAMES))
     parser.add_argument("--window-size", type=int, default=32)
     parser.add_argument("--confidence-threshold", type=float, default=0.25)
     parser.add_argument("--coordinate-clip", type=float, default=5.0)
@@ -73,7 +81,11 @@ def parse_args() -> argparse.Namespace:
         choices=("auto", "cpu", "cuda"),
         default="auto",
     )
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Defaults to weights/tcn_<task>.pt.",
+    )
     return parser.parse_args()
 
 
@@ -129,10 +141,16 @@ def main() -> None:
     if args.patience < 1:
         raise ValueError("--patience must be at least 1")
 
+    classification_task = resolve_classification_task(
+        args.task,
+        args.dataset_dir,
+    )
+    output_path = args.output or WEIGHTS_DIR / f"tcn_{classification_task}.pt"
     set_seed(args.seed)
     device = select_device(args.device)
     sequences = load_pose_sequences(
         args.dataset_dir,
+        classification_task=classification_task,
         confidence_threshold=args.confidence_threshold,
         coordinate_clip=args.coordinate_clip,
     )
@@ -144,6 +162,11 @@ def main() -> None:
     )
     class_names = class_names_from_training(
         sequences, split.train_video_ids
+    )
+    validate_task_labels(
+        classification_task,
+        class_names,
+        source="training split",
     )
     train_windows, train_targets = build_window_dataset(
         sequences,
@@ -200,6 +223,10 @@ def main() -> None:
     )
 
     print(f"Device: {device}")
+    print(
+        f"Classification task: {classification_task} "
+        f"({', '.join(class_names_for_task(classification_task))})"
+    )
     print(f"Training videos: {', '.join(split.train_video_ids)}")
     print(f"Validation videos: {', '.join(split.validation_video_ids)}")
     if split.ignored_video_ids:
@@ -281,7 +308,7 @@ def main() -> None:
         )
     )
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "state_dict": {
@@ -294,12 +321,13 @@ def main() -> None:
             "window_size": args.window_size,
             "confidence_threshold": args.confidence_threshold,
             "coordinate_clip": args.coordinate_clip,
+            "classification_task": classification_task,
             "train_video_ids": split.train_video_ids,
             "validation_video_ids": split.validation_video_ids,
         },
-        args.output,
+        output_path,
     )
-    print(f"Saved weights to {args.output}")
+    print(f"Saved weights to {output_path}")
 
 
 if __name__ == "__main__":

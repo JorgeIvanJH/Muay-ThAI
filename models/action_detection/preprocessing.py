@@ -12,10 +12,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
-from models.yolo.config import YOLO_KEYPOINT_NAMES
 
 import numpy as np
 import pandas as pd
+
+from models.action_detection.config import validate_task_labels
+from models.yolo.config import YOLO_KEYPOINT_NAMES
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -301,6 +303,7 @@ def normalize_selected_frames(
 def load_pose_sequences(
     dataset_dir: Path | str = DEFAULT_DATASET_DIR,
     *,
+    classification_task: str | None = None,
     confidence_threshold: float = 0.25,
     coordinate_clip: float = 5.0,
 ) -> dict[str, PoseSequence]:
@@ -319,9 +322,19 @@ def load_pose_sequences(
         )
 
     sequences: dict[str, PoseSequence] = {}
+    observed_labels: set[str] = set()
     for csv_path in csv_paths:
         raw = pd.read_csv(csv_path)
         validate_raw_schema(raw, csv_path)
+        csv_labels = set(raw["action_label"].astype(str))
+        if classification_task is not None:
+            validate_task_labels(
+                classification_task,
+                csv_labels,
+                source=str(csv_path),
+                require_all=False,
+            )
+        observed_labels.update(csv_labels)
         selected = select_largest_person(raw)
 
         for video_id, video_frames in selected.groupby("video_id", sort=False):
@@ -356,6 +369,12 @@ def load_pose_sequences(
                 ),
             )
 
+    if classification_task is not None:
+        validate_task_labels(
+            classification_task,
+            observed_labels,
+            source=str(dataset_path),
+        )
     return sequences
 
 
