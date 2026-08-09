@@ -11,8 +11,6 @@
     model_classifier_accuracy_threshold="0.99"
     model_score_threshold="0.5"
   >
-    <Label value="guard_up" background="#1aff00"/>
-    <Label value="guard_down" background="#ff0000"/>
     <Label value="background" background="#a2a2a2"/>
     <Label value="punch" background="#0000ff"/>
     <Label value="elbow" background="#8996f5"/>

@@ -1,32 +1,32 @@
 """
-Takes ground truth classification from dataset\classification (minimally processed Label Studio JSON) and joins it to YOLO pose detections.
+Takes ground truth classification from dataset/classification (minimally processed Label Studio JSON) and joins it to YOLO pose detections.
 
-Results are written to one CSV per video in dataset\jointswithactionlabels. See dataset\jointswithactionlabels\README.md for details on the output format.
+Results are written to one CSV per video in dataset/jointswithactionlabels. See dataset/jointswithactionlabels/README.md for details on the output format.
 """
+
+from __future__ import annotations
 
 import argparse
 import csv
 import json
 import sys
 from pathlib import Path
-from __future__ import annotations
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from models.action_detection.config import (
+    TASK_CLASS_NAMES,
+    validate_task_labels,
+)
 from models.yolo import config as yolocfg
 from models.yolo import utils as yoloutils
 
 
-DEFAULT_ANNOTATIONS = (
-    ROOT_DIR
-    / "dataset"
-    / "classification"
-    / "project-1-at-2026-07-29-11-24-494107dd.json"
-)
+DEFAULT_CLASSIFICATION_DIR = ROOT_DIR / "dataset" / "classification"
 DEFAULT_VIDEO_DIR = ROOT_DIR / "media" / "videos" / "30fps"
-DEFAULT_OUTPUT_DIR = ROOT_DIR / "dataset" / "jointswithactionlabels"
+DEFAULT_OUTPUT_ROOT = ROOT_DIR / "dataset" / "jointswithactionlabels"
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,10 +34,18 @@ def parse_args() -> argparse.Namespace:
         description="Run YOLO pose inference and join each frame to its action label."
     )
     parser.add_argument(
+        "--task",
+        choices=tuple(TASK_CLASS_NAMES), # options: "guard", or "striking"
+        default="guard",
+        help="Classification project whose labels are being exported.",
+    )
+    parser.add_argument(
         "--annotations",
         type=Path,
-        default=DEFAULT_ANNOTATIONS,
-        help="Simplified Label Studio JSON export.",
+        help=(
+            "Label Studio JSON export. By default, the single JSON file under "
+            "dataset/classification/<task> is used."
+        ),
     )
     parser.add_argument(
         "--video-dir",
@@ -48,8 +56,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help="Directory for one output CSV per video.",
+        help=(
+            "Directory for per-video CSVs. Defaults to "
+            "dataset/jointswithactionlabels/<task>."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -70,6 +80,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resolve_annotations_path(
+    task: str,
+    annotations: Path | None,
+) -> Path:
+    """
+    Resolve an explicit export or the task folder's only JSON export.
+    
+    Raises FileNotFoundError if the export cannot be found or if there is more than one JSON file in the task folder.
+    """
+
+    if annotations is not None:
+        if not annotations.is_file():
+            raise FileNotFoundError(f"Annotation export not found: {annotations}")
+        return annotations
+
+    task_dir = DEFAULT_CLASSIFICATION_DIR / task
+    candidates = sorted(task_dir.glob("*.json"))
+    if len(candidates) != 1:
+        raise FileNotFoundError(
+            f"Expected exactly one JSON export in {task_dir}, found "
+            f"{len(candidates)}. Pass --annotations explicitly."
+        )
+    return candidates[0]
+
+
 def load_annotation_tasks(path: Path) -> list[dict]:
     """
     Load a Label Studio JSON export and return the list of task records.
@@ -84,6 +119,28 @@ def load_annotation_tasks(path: Path) -> list[dict]:
     if not isinstance(tasks, list) or not tasks:
         raise ValueError(f"Expected a non-empty list of tasks in {path}")
     return tasks
+
+
+def validate_annotation_task_labels(
+    tasks: list[dict],
+    classification_task: str,
+    source: Path,
+) -> None:
+    """
+    Reject mixed or incomplete project vocabularies before running YOLO.
+    
+    Raises ValueError if any task contains labels not in the expected set for the classification task.
+    """
+
+    observed_labels: set[str] = set()
+    for task in tasks:
+        frame_labels, _ = build_frame_labels(task)
+        observed_labels.update(frame_labels.values())
+    validate_task_labels(
+        classification_task,
+        observed_labels,
+        source=str(source),
+    )
 
 
 def build_frame_labels(task: dict) -> tuple[dict[int, str], int]:
@@ -183,7 +240,7 @@ def resolve_video_path(label_studio_video: str, video_dir: Path) -> Path:
 
 def output_columns() -> list[str]:
     """
-    Column names for the output CSV file. See dataset\jointswithactionlabels\README.md for details on the output format.
+    Column names for the output CSV file. See dataset/jointswithactionlabels/README.md for details on the output format.
     """
     columns = [
         "task_id",
@@ -233,7 +290,7 @@ def build_rows(
 ) -> list[dict]:
     """
     Build a list of rows for a single frame, one row per detected person or bounding box.
-    See dataset\jointswithactionlabels\README.md for details on the output format.
+    See dataset/jointswithactionlabels/README.md for details on the output format.
     """
     base_row = {
         "task_id": task_id,
@@ -403,9 +460,16 @@ def main() -> None:
 
     from ultralytics import YOLO
 
-    tasks = load_annotation_tasks(args.annotations)
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    annotations_path = resolve_annotations_path(args.task, args.annotations)
+    output_dir = args.output_dir or DEFAULT_OUTPUT_ROOT / args.task
+    tasks = load_annotation_tasks(annotations_path)
+    validate_annotation_task_labels(tasks, args.task, annotations_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
     model = YOLO(str(args.model))
+    print(
+        f"Building {args.task!r} dataset with labels: "
+        f"{', '.join(TASK_CLASS_NAMES[args.task])}"
+    )
 
     resolved_paths: set[Path] = set()
     for task in tasks:
@@ -414,7 +478,7 @@ def main() -> None:
             raise ValueError(f"Multiple tasks resolve to the same video: {video_path}")
         resolved_paths.add(video_path)
 
-        output_path = args.output_dir / f"{video_path.stem}_joints_labels.csv"
+        output_path = output_dir / f"{video_path.stem}_joints_labels.csv"
         if output_path.exists() and not args.overwrite:
             print(f"Skipping existing output: {output_path}")
             continue

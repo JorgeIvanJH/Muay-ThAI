@@ -5,6 +5,20 @@ Label Studio timeline labels. Coordinates remain in pixels; person selection,
 normalization, missing-joint handling, and temporal window creation happen in
 the model preprocessing pipeline.
 
+Guard and striking datasets are deliberately isolated:
+
+    jointswithactionlabels/
+      guard/       background, guard_up, guard_down
+      striking/    background, punch, elbow, kick, knee
+
+Generate them independently:
+
+    python dataset/build_action_joint_dataset.py --task guard
+    python dataset/build_action_joint_dataset.py --task striking
+
+The exporter and model loader both validate the selected task vocabulary, so a
+CSV containing labels from the other task is rejected.
+
 These are pose **detections**, not tracked identities. A `person_index`,
 `box_index`, or `detection_index` is only meaningful within its frame and can
 change on the next frame.
@@ -35,7 +49,7 @@ component is unexpectedly absent.
 | `frame_index` | Zero-based decoded video-frame index used by Python/OpenCV. |
 | `label_frame` | One-based frame number used to match the Label Studio timeline. Equal to `frame_index + 1`. |
 | `time_seconds` | Frame timestamp calculated as `frame_index / fps`. |
-| `action_label` | Manual frame label exported from Label Studio, such as `guard_up`, `guard_down`, or `background`. It is repeated for every detection in the frame. |
+| `action_label` | Manual frame label from exactly one task vocabulary. Guard permits `background`, `guard_up`, and `guard_down`; striking permits `background`, `punch`, `elbow`, `kick`, and `knee`. It is repeated for every detection in the frame. |
 | `pose_detected` | `1` when this row contains a YOLO keypoint set; otherwise `0`. |
 | `bbox_detected` | `1` when this row contains a YOLO bounding box; otherwise `0`. |
 | `people_detected` | Number of keypoint/person instances returned by YOLO for the frame. Repeated on every row from that frame. |

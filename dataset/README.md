@@ -1,20 +1,30 @@
-This folder is dedicated to everything related to the construction of a dataset aimed to train models to classify actions based from YOLO's tracked joints.
+# Action-classification dataset
 
-To understand the idea, we can simplify the approach in the following steps:
+This folder contains the tooling used to create pose-only action datasets from
+30-FPS CFR videos and Label Studio timeline annotations.
 
-1. Take video sources with CFR (Constant Frame Rate), whose Frame Rate is known, of people performing the actions of interest. (e.g. kicking, punching, or doing nothing). note: some videos taken with modern cameras can have variable frame rates (VFR) to optimize storage. We store our CFR videos at 30FPS at media\videos\30fps, after being preprocessed using media\videos\preprocess_fps.sh.
-2. Manually label the frames corresponding to each of the actions (e.g. frames 30 to 45 whole duration of punch, frames 66 to 90 for kicks, frames 46 to 65 doing nothing), and having the resulting ranges somewhere. We label out videos using LabelStudio, locally deployed in a Docker container using dataset\compose.yml, and export out labels in a minimal json format to dataset\classification.
-3. For the same videos, run YOLO model and extract the joints of the person performing the actions, ans save them along with the previously labelled classes for each frame. We achieve this running dataset\build_action_joint_dataset.py, and verify the joint YOLO eskeleton drawn and the classes labelled using dataset\verify_action_joint_dataset.ipynb.
+Guard and striking are intentionally separate projects and datasets:
 
-This way we could identify actions based only from YOLO's tracked joints. The benefits of this are:
-- simpler classification model (much faster training and inference, much less need for ground truth), since we would rely on strongly established YOLO model to detect people, removing surrounding noise. If we would train a classification model taking raw frames, it would have to account for all the pixels as input, and have lots of ground truth to distinguish the person from multiple backgrounds. YOLO would deal extracting the person from any background, and also the input would only likely be 48 variables (the x,y and confidence score of each of the 16 joints) instead of all the pixels in an image (at least 224x224)
-- Classification would deal with the action, and YOLO with assigning the action to the limb. In other words, we wouldnt have to duplicate action abels to account for each arm or each leg. e.g. if we label punches regardless of which arm extended, YOLO would provide the right label for the corresponding arm that was extended for the punch.
-- Video Augmentation. We can take the same CFR labelled videos and flip or slightly rotate them. YOLO would identify actions similarly but as if the action was made with the other arm or leg, and the classification labels would apply equally.
+    classification/guard                 Label Studio guard JSON
+    classification/striking              Label Studio striking JSON
+    jointswithactionlabels/guard          generated guard pose CSVs
+    jointswithactionlabels/striking       generated striking pose CSVs
 
+Guard permits background, guard_up, and guard_down. Striking permits
+background, punch, elbow, kick, and knee. The exporter rejects mixed,
+unexpected, or incomplete vocabularies before running YOLO.
 
-# Lbel Studio Stup
+The workflow is:
 
-TODO: Update
+1. Convert source recordings to exactly 30-FPS CFR videos under
+   media/videos/30fps.
+2. Label every frame in the appropriate Label Studio project and export that
+   project to dataset/classification/guard or striking.
+3. Run build_action_joint_dataset.py with --task guard or --task striking.
+4. Change CLASSIFICATION_TASK in verify_action_joint_dataset.ipynb and inspect
+   the generated skeletons and labels.
+
+# Label Studio setup
 
 ## Video timeline labeling stack
 
@@ -125,13 +135,15 @@ RUN sed -i 's/\r$//' /app/start.sh && chmod +x /app/start.sh
 
 ## Labeling interface
 
-Use [timeline-labeling-config.xml](./timeline-labeling-config.xml) in
-**Project Settings > Labeling Interface > Code**.
+Use [timeline-labeling-guard.xml](./timeline-labeling-guard.xml) for the guard
+project and [timeline-labeling-striking.xml](./timeline-labeling-striking.xml)
+for the striking project in **Project Settings > Labeling Interface > Code**.
 
 The configuration keeps the project-specific labels and enables the trainable
 timeline classifier:
 
-TODO: Update, note that guard labels were sepparated from striking labels in diofferent projects, so the xml below does not compile all, but there are 2 different.
+The guard configuration is shown below. The striking configuration uses the
+same settings but only the background, punch, elbow, kick, and knee labels.
 
 ```xml
 <View>
@@ -147,13 +159,9 @@ TODO: Update, note that guard labels were sepparated from striking labels in dio
     model_classifier_accuracy_threshold="0.99"
     model_score_threshold="0.5"
   >
-    <Label value="guard_up" background="#FFA39E"/>
-    <Label value="guard_down" background="#D4380D"/>
-    <Label value="background" background="#FFA39E"/>
-    <Label value="punch" background="#D4380D"/>
-    <Label value="elbow" background="#FFC069"/>
-    <Label value="kick" background="#AD8B00"/>
-    <Label value="knee" background="#D3F261"/>
+    <Label value="background" background="#a2a2a2"/>
+    <Label value="guard_up" background="#1aff00"/>
+    <Label value="guard_down" background="#ff0000"/>
   </TimelineLabels>
 
   <Video
@@ -204,6 +212,9 @@ References:
 - [Label Studio ML backend Docker networking](https://labelstud.io/guide/ml#localhost-and-Docker-containers)
 
 
-## Which videos to use:
+## Videos
 
-The configuration above assumes 30fps videos at CFR. found only on [here](../media/videos/30fps) when processed using [this bash file](../media/videos/preprocess_fps.sh)
+Both labeling projects require 30-FPS CFR videos from
+[media/videos/30fps](../media/videos/30fps). Convert source recordings with
+[preprocess_fps.sh](../media/videos/preprocess_fps.sh) before uploading them to
+Label Studio.

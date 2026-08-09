@@ -1,0 +1,26 @@
+<View>
+  <TimelineLabels
+    name="videoLabels"
+    toName="video"
+    model_trainable="true"
+    model_classifier_epochs="1000"
+    model_classifier_sequence_size="16"
+    model_classifier_hidden_size="32"
+    model_classifier_num_layers="1"
+    model_classifier_f1_threshold="0.95"
+    model_classifier_accuracy_threshold="0.99"
+    model_score_threshold="0.5"
+  >
+    <Label value="background" background="#a2a2a2"/>
+    <Label value="guard_up" background="#1aff00"/>
+    <Label value="guard_down" background="#ff0000"/>
+  </TimelineLabels>
+
+  <Video
+    name="video"
+    value="$video"
+    height="700"
+    frameRate="30.0"
+    timelineHeight="200"
+  />
+</View>
