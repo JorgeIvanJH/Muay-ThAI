@@ -30,6 +30,28 @@ LEFT_HIP_INDEX = JOINT_NAMES.index("left_hip")
 RIGHT_HIP_INDEX = JOINT_NAMES.index("right_hip")
 FEATURE_CHANNELS = ("x_body", "y_body", "confidence", "valid")
 FRAME_KEYS = ["video_id", "frame_index"]
+HORIZONTAL_FLIP_INDICES = np.asarray(
+    [
+        0,  # nose
+        2,
+        1,  # eyes
+        4,
+        3,  # ears
+        6,
+        5,  # shoulders
+        8,
+        7,  # elbows
+        10,
+        9,  # wrists
+        12,
+        11,  # hips
+        14,
+        13,  # knees
+        16,
+        15,  # ankles
+    ],
+    dtype=np.int64,
+)
 
 
 @dataclass(frozen=True)  # Prevent accidental reassignment of sequence fields
@@ -513,15 +535,45 @@ def causal_windows(features: np.ndarray, window_size: int) -> np.ndarray:
     return windows
 
 
+def horizontal_flip_pose_features(features: np.ndarray) -> np.ndarray:
+    """
+    Mirror a complete normalized pose sequence horizontally.
+
+    The normalized horizontal coordinate is negated and anatomical left/right joint slots are exchanged. 
+    
+    Vertical coordinates, confidence, and validity move with their joint. The input array is not modified.
+    """
+
+    expected_feature_count = len(JOINT_NAMES) * len(FEATURE_CHANNELS)
+    if features.ndim != 2 or features.shape[1] != expected_feature_count:
+        raise ValueError(
+            "features must have shape "
+            f"[frames, {expected_feature_count}]"
+        )
+
+    poses = features.reshape(
+        len(features),
+        len(JOINT_NAMES),
+        len(FEATURE_CHANNELS),
+    ).copy()
+    poses[..., 0] *= -1.0
+    poses = poses[:, HORIZONTAL_FLIP_INDICES, :]
+    return poses.reshape(features.shape).astype(np.float32, copy=False)
+
+
 def build_window_dataset(
     sequences: dict[str, PoseSequence],
     video_ids: Sequence[str],
     *,
     window_size: int,
     class_names: Sequence[str],
+    augment_horizontal_flip: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Build a dataset of causal pose windows and their corresponding encoded labels for the specified videos.
+    Build causal pose windows and encoded labels for the specified videos.
+
+    When augment_horizontal_flip is enabled, each complete video sequence is mirrored before windowing and appended with unchanged labels.
+
     Returns a tuple (windows, targets) where:
     - windows: a 3D array of shape [total_frames, window_size, features]
     - targets: a 1D array of shape [total_frames] containing the encoded labels
@@ -531,8 +583,15 @@ def build_window_dataset(
     targets = []
     for video_id in video_ids:
         sequence = sequences[video_id]
+        encoded_labels = encode_labels(sequence.labels, class_names)
         windows.append(causal_windows(sequence.features, window_size))
-        targets.append(encode_labels(sequence.labels, class_names))
+        targets.append(encoded_labels)
+        if augment_horizontal_flip:
+            mirrored_features = horizontal_flip_pose_features(
+                sequence.features
+            )
+            windows.append(causal_windows(mirrored_features, window_size))
+            targets.append(encoded_labels.copy())
     return np.concatenate(windows), np.concatenate(targets)
 
 

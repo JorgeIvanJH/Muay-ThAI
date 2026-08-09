@@ -55,6 +55,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--confidence-threshold", type=float, default=0.25)
     parser.add_argument("--coordinate-clip", type=float, default=5.0)
     parser.add_argument(
+        "--horizontal-flip",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Append mirrored copies of training pose sequences. "
+            "Enabled by default; use --no-horizontal-flip to disable."
+        ),
+    )
+    parser.add_argument(
         "--train-videos",
         nargs="+",
         metavar="VIDEO",
@@ -173,6 +182,7 @@ def main() -> None:
         split.train_video_ids,
         window_size=args.window_size,
         class_names=class_names,
+        augment_horizontal_flip=args.horizontal_flip,
     )
     validation_windows, validation_targets = build_window_dataset(
         sequences,
@@ -232,6 +242,11 @@ def main() -> None:
     if split.ignored_video_ids:
         print(f"Ignored videos: {', '.join(split.ignored_video_ids)}")
     print(f"Classes: {', '.join(class_names)}")
+    print(
+        "Horizontal flip augmentation: "
+        f"{'enabled' if args.horizontal_flip else 'disabled'} "
+        "(training split only)"
+    )
     print(
         f"Training samples: {len(train_dataset):,}; "
         f"validation samples: {len(validation_dataset):,}; "
@@ -322,6 +337,7 @@ def main() -> None:
             "confidence_threshold": args.confidence_threshold,
             "coordinate_clip": args.coordinate_clip,
             "classification_task": classification_task,
+            "horizontal_flip_augmentation": args.horizontal_flip,
             "train_video_ids": split.train_video_ids,
             "validation_video_ids": split.validation_video_ids,
         },

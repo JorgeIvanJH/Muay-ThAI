@@ -13,8 +13,11 @@ Their generated datasets live under:
 
 Both architectures share preprocessing: select the largest person, centre the
 joints on the body, scale by torso length, retain confidence/validity channels,
-and build left-padded causal windows. Dataset labels are checked against the
-selected task before training.
+and build left-padded causal windows. Training sequences are horizontally
+mirrored by default: normalized x coordinates are negated and anatomical
+left/right joint channels are exchanged. Validation sequences are never
+augmented. Dataset labels are checked against the selected task before
+training.
 
 ## Training
 
@@ -35,6 +38,8 @@ distinct weights beneath the same architecture weights folder:
 
 For a custom directory name, pass --task guard or --task striking explicitly.
 Use --output only when overriding the standard distinctive filename.
+Horizontal mirroring can be disabled for an experiment with
+`--no-horizontal-flip`; the default is recommended for direction resilience.
 
 By default, sorted whole-video IDs are split deterministically: the final 20%
 are validation and all preceding videos are training. At least one video is
