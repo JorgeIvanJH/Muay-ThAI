@@ -413,7 +413,9 @@ def choose_video_split(
     If no explicit IDs are supplied, sorted video IDs are split
     deterministically: the final validation_fraction are used for validation
     and all preceding videos are used for training. At least one video is kept
-    in each group. Otherwise, both non-empty ID groups must be supplied.
+    in each group. If only validation IDs are supplied, every other available
+    video is used for training. Explicit training and validation groups are
+    also supported.
 
     Any available videos omitted from an explicit split are returned in
     ignored_video_ids.
@@ -432,9 +434,17 @@ def choose_video_split(
         )
         train = available[:-validation_count]
         validation = available[-validation_count:]
-    elif train_video_ids is not None and validation_video_ids is not None:
-        train = tuple(str(video_id) for video_id in train_video_ids)
+    elif validation_video_ids is not None:
         validation = tuple(str(video_id) for video_id in validation_video_ids)
+        if train_video_ids is None:
+            validation_set = set(validation)
+            train = tuple(
+                video_id
+                for video_id in available
+                if video_id not in validation_set
+            )
+        else:
+            train = tuple(str(video_id) for video_id in train_video_ids)
         if not train:
             raise ValueError("At least one training video is required")
         if not validation:
@@ -444,9 +454,7 @@ def choose_video_split(
         if len(set(validation)) != len(validation):
             raise ValueError("Validation video IDs must not contain duplicates")
     else:
-        raise ValueError(
-            "Specify both train_video_ids and validation_video_ids, or neither"
-        )
+        raise ValueError("validation_video_ids are required with train_video_ids")
 
     overlap = sorted(set(train) & set(validation))
     if overlap:

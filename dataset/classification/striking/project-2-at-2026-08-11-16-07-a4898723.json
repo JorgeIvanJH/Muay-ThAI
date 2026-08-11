@@ -3903,5 +3903,2249 @@
   "created_at": "2026-08-08T04:45:03.314624Z",
   "updated_at": "2026-08-08T04:45:03.314689Z",
   "lead_time": 3190.297
+},
+{
+  "video": "\/data\/upload\/2\/4b2ba9e6-20260728_095722_30fps.mp4",
+  "id": 15,
+  "videoLabels": [
+    {
+      "ranges": [
+        {
+          "start": 1,
+          "end": 3240
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    }
+  ],
+  "annotator": 1,
+  "annotation_id": 8,
+  "created_at": "2026-08-11T13:59:15.296437Z",
+  "updated_at": "2026-08-11T13:59:15.296509Z",
+  "lead_time": 764.8620000000001
+},
+{
+  "video": "\/data\/upload\/2\/c453eefe-20260728_095912_30fps.mp4",
+  "id": 16,
+  "videoLabels": [
+    {
+      "ranges": [
+        {
+          "start": 1,
+          "end": 4242
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    }
+  ],
+  "annotator": 1,
+  "annotation_id": 9,
+  "created_at": "2026-08-11T14:09:51.344657Z",
+  "updated_at": "2026-08-11T14:09:51.344696Z",
+  "lead_time": 32.889
+},
+{
+  "video": "\/data\/upload\/2\/0facfde4-20260728_130155_30fps.mp4",
+  "id": 17,
+  "videoLabels": [
+    {
+      "ranges": [
+        {
+          "start": 1,
+          "end": 5419
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5420,
+          "end": 5490
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5491,
+          "end": 5504
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5505,
+          "end": 5570
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5571,
+          "end": 5604
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5605,
+          "end": 5654
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5655,
+          "end": 5659
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5660,
+          "end": 5717
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5718,
+          "end": 5731
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5732,
+          "end": 5777
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5778,
+          "end": 5783
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5784,
+          "end": 5837
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5838,
+          "end": 5845
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5846,
+          "end": 5890
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5891,
+          "end": 5900
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5901,
+          "end": 5945
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5946,
+          "end": 5957
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5958,
+          "end": 5997
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 5998,
+          "end": 6009
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6010,
+          "end": 6050
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6051,
+          "end": 6136
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6137,
+          "end": 6212
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6213,
+          "end": 6274
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6275,
+          "end": 6340
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6341,
+          "end": 6399
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6400,
+          "end": 6472
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6473,
+          "end": 6525
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6526,
+          "end": 6596
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6597,
+          "end": 6618
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6619,
+          "end": 6665
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6666,
+          "end": 6740
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6741,
+          "end": 6797
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6798,
+          "end": 6828
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6829,
+          "end": 6909
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6910,
+          "end": 6965
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 6966,
+          "end": 7041
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7042,
+          "end": 7086
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7087,
+          "end": 7156
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7157,
+          "end": 7213
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7214,
+          "end": 7275
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7276,
+          "end": 7332
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7333,
+          "end": 7396
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7397,
+          "end": 7447
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7448,
+          "end": 7512
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7513,
+          "end": 7561
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7562,
+          "end": 7629
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7630,
+          "end": 7657
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7658,
+          "end": 7717
+        }
+      ],
+      "timelinelabels": [
+        "kick"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7718,
+          "end": 7763
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7764,
+          "end": 7792
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7793,
+          "end": 7793
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7794,
+          "end": 7822
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7823,
+          "end": 7823
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7824,
+          "end": 7858
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7859,
+          "end": 7862
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7863,
+          "end": 7891
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7892,
+          "end": 7894
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7895,
+          "end": 7930
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7931,
+          "end": 7931
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7932,
+          "end": 7966
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7967,
+          "end": 7967
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7968,
+          "end": 7997
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7998,
+          "end": 7998
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 7999,
+          "end": 8024
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8025,
+          "end": 8038
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8039,
+          "end": 8071
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8072,
+          "end": 8076
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8077,
+          "end": 8110
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8111,
+          "end": 8140
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8141,
+          "end": 8148
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8149,
+          "end": 8184
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8185,
+          "end": 8198
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8199,
+          "end": 8225
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8226,
+          "end": 8238
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8239,
+          "end": 8272
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8273,
+          "end": 8301
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8302,
+          "end": 8336
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8337,
+          "end": 8354
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8355,
+          "end": 8400
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8401,
+          "end": 8444
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8445,
+          "end": 8494
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8495,
+          "end": 8495
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8496,
+          "end": 8546
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 8547,
+          "end": 8701
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    }
+  ],
+  "annotator": 1,
+  "annotation_id": 10,
+  "created_at": "2026-08-11T14:55:24.150322Z",
+  "updated_at": "2026-08-11T14:55:24.150355Z",
+  "lead_time": 2268.314
+},
+{
+  "video": "\/data\/upload\/2\/3620936a-webcam-0__tcn__20260803-010949_raw_30fps.mp4",
+  "id": 18,
+  "videoLabels": [
+    {
+      "ranges": [
+        {
+          "start": 1,
+          "end": 1231
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    }
+  ],
+  "annotator": 1,
+  "annotation_id": 11,
+  "created_at": "2026-08-11T15:11:18.826982Z",
+  "updated_at": "2026-08-11T15:11:18.827029Z",
+  "lead_time": 68.855
+},
+{
+  "video": "\/data\/upload\/2\/c93ac426-webcam-0__tcn__20260807-122429_raw_30fps.mp4",
+  "id": 19,
+  "videoLabels": [
+    {
+      "ranges": [
+        {
+          "start": 1,
+          "end": 473
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 474,
+          "end": 491
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 492,
+          "end": 500
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 501,
+          "end": 520
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 521,
+          "end": 527
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 528,
+          "end": 547
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 548,
+          "end": 554
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 555,
+          "end": 576
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 577,
+          "end": 583
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 584,
+          "end": 603
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 604,
+          "end": 604
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 605,
+          "end": 633
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 634,
+          "end": 636
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 637,
+          "end": 647
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 648,
+          "end": 651
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 652,
+          "end": 677
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 678,
+          "end": 686
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 687,
+          "end": 704
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 705,
+          "end": 707
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 708,
+          "end": 726
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 727,
+          "end": 743
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 744,
+          "end": 745
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 746,
+          "end": 756
+        }
+      ],
+      "timelinelabels": [
+        "elbow"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 757,
+          "end": 761
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 762,
+          "end": 781
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 782,
+          "end": 785
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 786,
+          "end": 805
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 806,
+          "end": 819
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 820,
+          "end": 838
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 839,
+          "end": 844
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 845,
+          "end": 859
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 860,
+          "end": 862
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 863,
+          "end": 876
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 877,
+          "end": 891
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 892,
+          "end": 901
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 902,
+          "end": 923
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 924,
+          "end": 1178
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1179,
+          "end": 1192
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1193,
+          "end": 1244
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1245,
+          "end": 1267
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1268,
+          "end": 1270
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1271,
+          "end": 1294
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1295,
+          "end": 1316
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1317,
+          "end": 1346
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1347,
+          "end": 1530
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1531,
+          "end": 1556
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1557,
+          "end": 1726
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1727,
+          "end": 1779
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1780,
+          "end": 1783
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1784,
+          "end": 1792
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1793,
+          "end": 1796
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1797,
+          "end": 1816
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1817,
+          "end": 1820
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1821,
+          "end": 1830
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1831,
+          "end": 1838
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1839,
+          "end": 1861
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1862,
+          "end": 1864
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1865,
+          "end": 1958
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1959,
+          "end": 1965
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1966,
+          "end": 1988
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 1989,
+          "end": 2000
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2001,
+          "end": 2042
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2043,
+          "end": 2054
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2055,
+          "end": 2071
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2072,
+          "end": 2083
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2084,
+          "end": 2103
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2104,
+          "end": 2119
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2120,
+          "end": 2127
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2128,
+          "end": 2154
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2155,
+          "end": 2156
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2157,
+          "end": 2169
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2170,
+          "end": 2179
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2180,
+          "end": 2197
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2198,
+          "end": 2201
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2202,
+          "end": 2221
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2222,
+          "end": 2227
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2228,
+          "end": 2252
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2253,
+          "end": 2256
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2257,
+          "end": 2265
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2266,
+          "end": 2270
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2271,
+          "end": 2287
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2288,
+          "end": 2298
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2299,
+          "end": 2309
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2310,
+          "end": 2311
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2312,
+          "end": 2323
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2324,
+          "end": 2324
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2325,
+          "end": 2334
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2335,
+          "end": 2336
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2337,
+          "end": 2344
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2345,
+          "end": 2345
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2346,
+          "end": 2355
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2356,
+          "end": 2356
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2357,
+          "end": 2365
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2366,
+          "end": 2366
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2367,
+          "end": 2375
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2376,
+          "end": 2376
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2377,
+          "end": 2397
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2398,
+          "end": 2409
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2410,
+          "end": 2431
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2432,
+          "end": 2447
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2448,
+          "end": 2471
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2472,
+          "end": 2477
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2478,
+          "end": 2494
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2495,
+          "end": 2500
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2501,
+          "end": 2510
+        }
+      ],
+      "timelinelabels": [
+        "knee"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2511,
+          "end": 2511
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2512,
+          "end": 2524
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2525,
+          "end": 2529
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2530,
+          "end": 2540
+        }
+      ],
+      "timelinelabels": [
+        "punch"
+      ]
+    },
+    {
+      "ranges": [
+        {
+          "start": 2541,
+          "end": 2988
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    }
+  ],
+  "annotator": 1,
+  "annotation_id": 12,
+  "created_at": "2026-08-11T16:02:16.203709Z",
+  "updated_at": "2026-08-11T16:02:16.203728Z",
+  "lead_time": 2757.701
+},
+{
+  "video": "\/data\/upload\/2\/ef3a4d00-webcam-0__tcn__20260807-122153_raw_30fps.mp4",
+  "id": 20,
+  "videoLabels": [
+    {
+      "ranges": [
+        {
+          "start": 1,
+          "end": 770
+        }
+      ],
+      "timelinelabels": [
+        "background"
+      ]
+    }
+  ],
+  "annotator": 1,
+  "annotation_id": 13,
+  "created_at": "2026-08-11T16:04:32.590504Z",
+  "updated_at": "2026-08-11T16:04:32.590542Z",
+  "lead_time": 31.695
 }
 ]

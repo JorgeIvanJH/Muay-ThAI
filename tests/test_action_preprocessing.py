@@ -7,6 +7,7 @@ from models.action_detection.preprocessing import (
     JOINT_NAMES,
     PoseSequence,
     build_window_dataset,
+    choose_video_split,
     horizontal_flip_pose_features,
 )
 
@@ -100,6 +101,18 @@ class HorizontalFlipTests(unittest.TestCase):
             augmented_targets,
             np.asarray([0, 1, 0, 1]),
         )
+
+
+class VideoSplitTests(unittest.TestCase):
+    def test_validation_only_uses_all_remaining_videos_for_training(self) -> None:
+        split = choose_video_split(
+            ["video_3", "video_1", "video_2"],
+            validation_video_ids=["video_2"],
+        )
+
+        self.assertEqual(split.train_video_ids, ("video_1", "video_3"))
+        self.assertEqual(split.validation_video_ids, ("video_2",))
+        self.assertEqual(split.ignored_video_ids, ())
 
 
 if __name__ == "__main__":

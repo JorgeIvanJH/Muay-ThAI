@@ -349,7 +349,8 @@ def main() -> None:
 if __name__ == "__main__":
     main()
     """
-    conda run -n muay-thai python models/action_detection/TCN/train.py `
-        --train-videos video_1 video_2 video_3 `
-        --val-videos video_4 video_5
+        python models/action_detection/TCN/train.py `
+        --dataset-dir dataset/jointswithactionlabels/striking `
+        --task striking `
+        --val-videos 20260808_015154_30fps
     """

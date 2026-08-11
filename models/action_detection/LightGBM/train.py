@@ -210,3 +210,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    """
+        python models/action_detection/LightGBM/train.py `
+        --dataset-dir dataset/jointswithactionlabels/striking `
+        --task striking `
+        --val-videos 20260808_015154_30fps
+    """
