@@ -16,6 +16,8 @@ import pandas as pd
 from ultralytics import YOLO
 
 from models import utils as modelutils
+from models.action_detection.analytics import AnalyticsConfig, StrikeAnalytics
+from models.action_detection.analytics.types import JointPoint
 from models.action_detection.config import (
     CLASS_COLORS,
     SKELETON_EDGES,
@@ -171,6 +173,22 @@ def build_inference_parser(
         type=int,
         help="Requested webcam capture height.",
     )
+    parser.add_argument(
+        "--metrics",
+        nargs="+",
+        choices=("count", "speed"),
+        default=("count", "speed"),
+        help=(
+            "Strike metrics to compute. Defaults to both; pass only count or "
+            "only speed when desired."
+        ),
+    )
+    parser.add_argument(
+        "--person-height-cm",
+        type=float,
+        default=175.0,
+        help="Person height used for approximate physical speed (default: 175).",
+    )
     return parser
 
 
@@ -183,6 +201,8 @@ def _validate_arguments(args: argparse.Namespace) -> None:
         raise ValueError("--camera-width must be positive")
     if args.camera_height is not None and args.camera_height < 1:
         raise ValueError("--camera-height must be positive")
+    if not 50.0 <= args.person_height_cm <= 250.0:
+        raise ValueError("--person-height-cm must be between 50 and 250")
 
 
 def _open_writer(path: Path, frame: np.ndarray) -> cv2.VideoWriter:
@@ -380,6 +400,23 @@ def _select_pose(
     return select_largest_person(raw_rows).reset_index(drop=True)
 
 
+def _pose_points(pose: pd.Series) -> dict[str, JointPoint]:
+    """Extract raw keypoints from the selected-person row."""
+
+    if not int(pose.get("pose_detected", 0) or 0):
+        return {}
+    return {
+        joint_name: JointPoint(
+            x_px=float(pose.get(f"{joint_name}_x_px", np.nan)),
+            y_px=float(pose.get(f"{joint_name}_y_px", np.nan)),
+            confidence=float(
+                pose.get(f"{joint_name}_confidence", np.nan)
+            ),
+        )
+        for joint_name in yolocfg.YOLO_KEYPOINT_NAMES
+    }
+
+
 def draw_action_overlay(
     frame: np.ndarray,
     pose: pd.Series,
@@ -387,6 +424,7 @@ def draw_action_overlay(
     predictions: Sequence[ActionPrediction],
     confidence_threshold: float,
     processing_fps: float,
+    analytics_lines: Sequence[str] = (),
 ) -> np.ndarray:
     """
     Draw the selected pose and both task predictions on a BGR frame.
@@ -435,7 +473,7 @@ def draw_action_overlay(
         cv2.circle(output, point, 5, (255, 255, 255), -1)
         cv2.circle(output, point, 5, color, 2)
 
-    header_height = 36 * len(predictions) + 34
+    header_height = 36 * len(predictions) + 34 + 26 * len(analytics_lines)
     cv2.rectangle(
         output,
         (0, 0),
@@ -465,6 +503,19 @@ def draw_action_overlay(
             0.78,
             prediction_color,
             2,
+            cv2.LINE_AA,
+        )
+
+    analytics_start_y = 30 + 36 * len(predictions)
+    for line_index, line in enumerate(analytics_lines):
+        cv2.putText(
+            output,
+            line,
+            (16, analytics_start_y + line_index * 26),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.56,
+            (235, 235, 235),
+            1,
             cv2.LINE_AA,
         )
 
@@ -537,6 +588,15 @@ def run_action_inference(
         if webcam
         else None
     )
+    output_prefix = output_paths["predictions"].name.removesuffix(
+        "_predictions.jsonl"
+    )
+    analytics_events_path = (
+        output_paths["run_dir"] / f"{output_prefix}_events.csv"
+    )
+    analytics_summary_path = (
+        output_paths["run_dir"] / f"{output_prefix}_summary.json"
+    )
 
     capture = cv2.VideoCapture(capture_source)
     if not capture.isOpened():
@@ -560,6 +620,15 @@ def run_action_inference(
         runtime.classification_task: deque(maxlen=runtime.window_size)
         for runtime in runtimes
     }
+    analytics = StrikeAnalytics(
+        AnalyticsConfig(
+            enabled_metrics=tuple(args.metrics),
+            person_height_m=args.person_height_cm / 100.0,
+            keypoint_confidence=min(
+                runtime.confidence_threshold for runtime in runtimes
+            ),
+        )
+    )
     annotated_writer: cv2.VideoWriter | None = None
     raw_writer: cv2.VideoWriter | None = None
     processed_frames = 0
@@ -638,6 +707,24 @@ def run_action_inference(
                         )
                     )
 
+                striking_prediction = next(
+                    prediction
+                    for prediction in frame_predictions
+                    if prediction.classification_task == "striking"
+                )
+                analytics_snapshot = analytics.update(
+                    frame_index=frame_index,
+                    timestamp=timestamp,
+                    pose_points=_pose_points(pose),
+                    striking_probabilities={
+                        class_name: float(
+                            striking_prediction.probabilities[class_index]
+                        )
+                        for class_index, class_name in enumerate(
+                            striking_prediction.class_names
+                        )
+                    },
+                )
                 elapsed = max(time.perf_counter() - inference_started, 1e-9)
                 annotated_frame = draw_action_overlay(
                     frame,
@@ -647,6 +734,9 @@ def run_action_inference(
                         runtime.confidence_threshold for runtime in runtimes
                     ),
                     processing_fps=1.0 / elapsed,
+                    analytics_lines=analytics.overlay_lines(
+                        analytics_snapshot
+                    ),
                 )
 
                 if annotated_writer is None:
@@ -684,6 +774,7 @@ def run_action_inference(
                                 if pd.isna(pose["detection_index"])
                                 else int(pose["detection_index"])
                             ),
+                            "analytics": analytics_snapshot.as_record(),
                         }
                     )
                     + "\n"
@@ -710,6 +801,7 @@ def run_action_inference(
                     and processed_frames >= args.max_frames
                 ):
                     break
+        analytics.finalize()
     finally:
         capture.release()
         if annotated_writer is not None:
@@ -718,12 +810,19 @@ def run_action_inference(
             raw_writer.release()
         cv2.destroyAllWindows()
 
+    analytics.write_outputs(
+        analytics_events_path,
+        analytics_summary_path,
+    )
+
     duration = max(time.perf_counter() - started_at, 1e-9)
     print(
         f"Processed {processed_frames:,} CFR frames at "
         f"{processed_frames / duration:.1f} average FPS"
     )
     print(f"Saved predictions to {output_paths['predictions']}")
+    print(f"Saved strike events to {analytics_events_path}")
+    print(f"Saved analytics summary to {analytics_summary_path}")
     if annotated_writer is not None:
         print(f"Saved annotated video to {output_paths['video']}")
     if raw_video_path is not None and raw_writer is not None:

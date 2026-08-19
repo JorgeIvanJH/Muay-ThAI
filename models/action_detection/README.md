@@ -77,3 +77,32 @@ are written beneath output. Webcam capture is requested and paced at 30 FPS,
 and unannotated webcam frames are additionally written beneath
 media/videos/raw. Actual throughput is limited primarily by YOLO pose
 inference. Press q to stop a displayed session.
+
+## Strike analytics
+
+Inference also has a deterministic analytics layer after pose and striking
+classification. It smooths keypoints causally, estimates image scale from the
+supplied person height and canonical long-bone proportions, assigns each
+strike to the faster anatomical limb, and confirms an event with a small state
+machine. The initial state-machine thresholds are deliberately kept in
+`analytics/strike_events.py` so they can later be tuned against event-level
+ground truth without retraining either classifier.
+
+Both strike counts and speed estimates are enabled by default. Select only one
+metric or override the default 175 cm height as follows:
+
+    --metrics count
+    --metrics speed
+    --metrics count speed --person-height-cm 182
+
+Every run writes the annotated MP4 and predictions JSONL plus an events CSV and
+summary JSON in the same output folder. The CSV contains event type, anatomical
+side, start/apex/end times, classifier confidence and, when requested, sampled,
+robust and locally interpolated peak speeds.
+
+Physical speed remains a monocular estimate. Side-on recordings make projected
+extension much more informative, but motion towards the camera, keypoint noise
+and 30-FPS temporal sampling cannot be fully recovered. The quadratic estimate
+is accepted only when its concave peak lies inside the local sample interval
+and does not overshoot the observed peak implausibly; otherwise it falls back
+to the sampled peak.

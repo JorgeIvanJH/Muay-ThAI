@@ -1,0 +1,12 @@
+For dataset generation:
+1. have a better structured setup for dataset generation with ML backend
+2. Add our actual true YOLO-based and TCN model as a backend to help label better new samples
+3. Achieve Active Learning, to leverage unlabelled samples without any manual effort. (TOUGH)
+
+For IRIS:
+0. IRIS 2026 instance
+1. TCN as IntegratedML custom Models
+2. Inference using IRIS (?)
+3. Storing predictions in IRIS
+4. Cubes, Pivot Tables, Dashboards
+5. AI Hub for feedback
