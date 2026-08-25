@@ -115,10 +115,7 @@ def build_inference_parser(
         "--striking-weights",
         type=Path,
         default=default_striking_weights,
-        help=(
-            "Trained striking-classifier bundle. A background-only stub is "
-            "used while this file does not exist."
-        ),
+        help="Trained striking-classifier bundle (required).",
     )
     parser.add_argument(
         "--pose-model",
