@@ -175,7 +175,9 @@ class AnalyticsSnapshot:
 
 
 class StrikeAnalytics:
-    """Compute selected metrics from pose points and striking probabilities."""
+    """
+    Compute selected metrics from pose points and striking probabilities.
+    """
 
     def __init__(
         self,

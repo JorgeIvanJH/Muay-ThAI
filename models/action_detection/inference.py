@@ -40,7 +40,9 @@ DEFAULT_RAW_VIDEO_DIR = ROOT_DIR / "media" / "videos" / "raw"
 
 @dataclass(frozen=True)
 class ActionModelRuntime:
-    """Loaded classifier plus the preprocessing settings saved at training."""
+    """
+    Loaded classifier plus the preprocessing settings saved at training.
+    """
 
     model_name: str
     classification_task: str
@@ -49,7 +51,6 @@ class ActionModelRuntime:
     confidence_threshold: float
     coordinate_clip: float
     predict_probabilities: Callable[[np.ndarray], np.ndarray]
-    is_stub: bool = False
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,6 @@ class ActionPrediction:
     class_name: str
     probability: float
     probabilities: np.ndarray
-    is_stub: bool
 
 
 def validate_model_bundle(
@@ -255,42 +255,51 @@ def _iter_cfr_frames(
     webcam: bool,
 ) -> Iterator[tuple[int, float, np.ndarray]]:
     """
-    Yield a 30-FPS constant-rate stream.
+    Yield a 30-FPS constant-rate stream. Produce frames on a constant 30-FPS output timeline.
+
+    Each yielded value is:
+        (output_frame_index, timestamp_in_seconds, frame_pixels)
 
     Usage: Inference only.
 
-    Files are time-resampled using their declared frame rate, including frame
-    dropping or duplication. Webcam capture is requested and paced at 30 FPS.
+    Webcam input is paced in real time. Video-file input is resampled
+    from its declared frame rate to TARGET_FPS (including frame dropping or duplication)
     """
-
+    # Webcam input must be paced using the computer's clock (time.perf_counter()) because frames arrive live rather than being read from an already recorded timeline.
     if webcam:
         frame_index = 0
         frame_period = 1.0 / TARGET_FPS
-        next_deadline = time.perf_counter()
+        next_deadline = time.perf_counter() # Duration of one output frame. At 30 FPS this is about 0.0333 seconds.
         while capture.isOpened():
-            delay = next_deadline - time.perf_counter()
+            # Wait until the scheduled time for the next frame.
+            delay = next_deadline - time.perf_counter() 
             if delay > 0:
                 time.sleep(delay)
-
+            # Ask OpenCV for the next webcam image.
             success, frame = capture.read()
             if not success:
                 break
-            yield frame_index, frame_index / TARGET_FPS, frame
-            frame_index += 1
+            # Produce one output item: (output_frame_index, timestamp_in_seconds, frame_pixels)
+            yield frame_index, frame_index / TARGET_FPS, frame # Execution PAUSES HERE until the caller requests another item
 
-            next_deadline += frame_period
+            # Code below resumes after the yield.
+            frame_index += 1
+            next_deadline += frame_period # Schedule next frame
             now = time.perf_counter()
-            if next_deadline < now:
+            # If the next frame is already late, skip ahead to the current time to avoid accumulating lag.
+            if next_deadline < now: 
                 next_deadline = now
         return
 
+    # For a video file, obtain the frame rate recorded in its metadata.
     source_fps = float(capture.get(cv2.CAP_PROP_FPS))
     if not np.isfinite(source_fps) or source_fps <= 0:
         raise RuntimeError("The input video does not report a valid frame rate")
 
-    source_frame_index = 0
-    output_frame_index = 0
+    source_frame_index = 0 # frame index in the original video file
+    output_frame_index = 0 # frame index in the 30-FPS output timeline
     last_frame: np.ndarray | None = None
+    # Decode the source file one frame at a time, yielding frames on the 30-FPS output timeline. This may drop or duplicate frames to achieve a constant output rate.
     while capture.isOpened():
         success, frame = capture.read()
         if not success:
@@ -298,6 +307,7 @@ def _iter_cfr_frames(
 
         last_frame = frame
         source_time = source_frame_index / source_fps
+        # Yield the current frame repeatedly until the output timeline catches up to the next source frame's timestamp. This may duplicate frames if the source FPS is lower than TARGET_FPS.
         while output_frame_index / TARGET_FPS <= source_time + 1e-9:
             yield (
                 output_frame_index,
@@ -307,9 +317,7 @@ def _iter_cfr_frames(
             output_frame_index += 1
         source_frame_index += 1
 
-    # A decoded frame represents the interval until the following frame. For
-    # low-FPS inputs, fill any remaining 30-FPS samples in the final interval
-    # with the last decoded frame.
+    # Handle the case where the source video ends but the output timeline has not yet reached the end of the last frame's duration. This may duplicate the last frame if the source FPS is lower than TARGET_FPS.
     source_duration = source_frame_index / source_fps
     while (
         last_frame is not None
@@ -519,11 +527,9 @@ def draw_action_overlay(
         prediction_color = tuple(
             int(channel) for channel in reversed(prediction_color_rgb)
         )
-        stub_text = " [STUB]" if prediction.is_stub else ""
         label = (
             f"{prediction.classification_task.capitalize()}: "
             f"{prediction.class_name}  {prediction.probability:.1%}"
-            f"{stub_text}"
         )
         cv2.putText(
             output,
@@ -674,13 +680,16 @@ def run_action_inference(
             for frame_index, timestamp, frame in _iter_cfr_frames(
                 capture,
                 webcam=webcam,
-            ):
+            ): # Yield one frame at a time on a 30-FPS output timeline
+
+                # Write frame to raw video
                 if raw_video_path is not None:
                     if raw_writer is None:
                         raw_writer = _open_writer(raw_video_path, frame)
                     raw_writer.write(frame)
 
                 inference_started = time.perf_counter()
+                # Run YOLO pose detection and select the largest person
                 yolo_arguments: dict[str, object] = {
                     "verbose": False,
                     "conf": args.yolo_confidence,
@@ -694,6 +703,8 @@ def run_action_inference(
                     frame=frame,
                 )
                 pose = selected_pose.iloc[0]
+
+                # Run both action classifiers
                 frame_predictions = []
                 for runtime in runtimes:
                     current_features = normalize_selected_frames(
@@ -735,10 +746,9 @@ def run_action_inference(
                             class_name=runtime.class_names[class_index],
                             probability=float(probabilities[class_index]),
                             probabilities=probabilities,
-                            is_stub=runtime.is_stub,
                         )
                     )
-
+                # Update analytics with the latest pose and striking probabilities
                 striking_prediction = next(
                     prediction
                     for prediction in frame_predictions
@@ -785,7 +795,6 @@ def run_action_inference(
                             "predictions": {
                                 prediction.classification_task: {
                                     "model_name": prediction.model_name,
-                                    "is_stub": prediction.is_stub,
                                     "class_name": prediction.class_name,
                                     "confidence": prediction.probability,
                                     "class_probabilities": {
