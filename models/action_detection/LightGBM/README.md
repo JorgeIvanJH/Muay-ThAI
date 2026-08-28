@@ -154,7 +154,10 @@ conda run -n muay-thai python models/action_detection/LightGBM/infer.py `
 ```
 
 The LightGBM classifier itself is usually inexpensive during inference. YOLO
-Pose is likely to dominate total frame time.
+Pose is likely to dominate total frame time. Both LightGBMs execute in the
+ordered CPU action stage while camera capture, GPU pose inference and video
+encoding proceed concurrently. See the shared
+[real-time pipeline guide](../realtime/README.md).
 
 ## How to use the baseline scientifically
 

@@ -23,7 +23,7 @@ class SegmentSpec:
 # Approximate adult proportions. They provide a practical monocular scale,
 # not a clinical body measurement. Each left/right segment is calibrated
 # independently so temporary occlusion of one side does not stop estimation.
-CANONICAL_SEGMENTS = (
+CANONICAL_SEGMENTS = ( # TODO: where taken from?
     SegmentSpec("left_upper_arm", "left_shoulder", "left_elbow", 0.186),
     SegmentSpec("right_upper_arm", "right_shoulder", "right_elbow", 0.186),
     SegmentSpec("left_forearm", "left_elbow", "left_wrist", 0.146),
@@ -57,7 +57,7 @@ class AnthropometricScaleEstimator:
     A high temporal quantile is retained for every segment because a projected
     2-D bone is shortened when it points partly towards the camera. The median
     across visible segments and an EMA keep the session scale stable.
-    """
+    """ # TODO:: what does this mean?
 
     def __init__(
         self,

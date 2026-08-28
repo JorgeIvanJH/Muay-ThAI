@@ -40,7 +40,10 @@ def _select_device(requested: str) -> torch.device:
     Usage: Inference only.
     """
     if requested == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # These TCNs are small enough to run faster on CPU on the target
+        # laptop. Leaving CUDA to the pose worker also lets frame N+1 overlap
+        # with action classification and analytics for frame N.
+        return torch.device("cpu")
     if requested == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is not available")
     return torch.device(requested)
@@ -78,7 +81,7 @@ def load_runtime(
         Usage: Inference only.
         """
         inputs = torch.from_numpy(window[None]).to(device)
-        with torch.no_grad():
+        with torch.inference_mode():
             logits = model(inputs)
             return torch.softmax(logits, dim=1)[0].cpu().numpy()
 
@@ -110,7 +113,10 @@ def main() -> None:
         "--device",
         choices=("auto", "cpu", "cuda"),
         default="auto",
-        help="Device for the TCN classifier.",
+        help=(
+            "Device for the TCN classifiers. Auto uses CPU so they can run "
+            "concurrently with GPU pose inference."
+        ),
     )
     args = parser.parse_args()
     device = _select_device(args.device)

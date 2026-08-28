@@ -208,8 +208,11 @@ conda run -n muay-thai python models/action_detection/TCN/infer.py `
   --display
 ```
 
-The `--device` option controls only the TCN. Use `--yolo-device` to override
-the Ultralytics pose device.
+The `--device` option controls only the TCN. `auto` uses CPU because the two
+small classifiers measured faster there on the target laptop and can overlap
+with GPU pose inference. Pass `--device cuda` to test different hardware. Use
+`--yolo-device` to override the Ultralytics pose device. See the shared
+[real-time pipeline guide](../realtime/README.md) for threading and telemetry.
 
 ## When should the TCN outperform LightGBM?
 

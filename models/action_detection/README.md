@@ -52,7 +52,9 @@ body-centred pose features       raw pixel keypoints
 ```
 
 During inference YOLO runs once per frame. The selected pose is reused by both
-classifiers and by analytics.
+classifiers and by analytics. Capture, pose inference, ordered action/analytics
+processing and video encoding form a bounded concurrent pipeline; see the
+[real-time guide](realtime/README.md).
 
 ## Suggested reading order
 
@@ -62,8 +64,9 @@ classifiers and by analytics.
 | 2 | `preprocessing.py` | Raw pixel joints to model-ready temporal features. |
 | 3 | [`LightGBM/`](LightGBM/README.md) | The simplest trainable baseline. Start here if temporal ML is new to you. |
 | 4 | [`TCN/`](TCN/README.md) | A causal neural network that learns motion patterns. |
-| 5 | `inference.py` | The shared video loop used by both model families. |
-| 6 | [`analytics/`](analytics/README.md) | Counting, limb assignment and approximate speed. |
+| 5 | [`realtime/`](realtime/README.md) | Concurrent capture, pose, actions and output. |
+| 6 | `inference.py` | Shared orchestration used by both model families. |
+| 7 | [`analytics/`](analytics/README.md) | Counting, limb assignment and approximate speed. |
 
 `inference.py` is a library, not the normal command-line entry point. Run
 `TCN/infer.py` or `LightGBM/infer.py`; each loads its models and calls the
@@ -240,20 +243,27 @@ Use `--guard-weights` and `--striking-weights` to override saved bundles.
 
 Shared inference then:
 
-1. Places file input on a 30 FPS constant-rate timeline, or requests 30 FPS
-   webcam capture.
-2. Runs YOLO Pose and selects the largest person.
-3. Normalizes the pose using settings saved in each model bundle.
-4. Updates guard and striking histories.
-5. Gets both probability vectors.
-6. Updates strike analytics.
-7. Draws the skeleton, predictions and metrics.
-8. Writes the annotated frame and JSONL record.
+1. Reads the camera on a dedicated thread and attaches a measured monotonic
+   timestamp. Files instead use an ordered 30-FPS CFR source timeline.
+2. Runs one YOLO Pose worker and selects the largest person directly from
+   numeric tensors.
+3. Normalizes each distinct preprocessing configuration once and updates fixed
+   guard and striking temporal buffers.
+4. Gets both probability vectors, then updates ordered strike analytics.
+5. Draws the skeleton, predictions, metrics and separate stage telemetry.
+6. Writes videos on bounded encoder threads while JSON remains ordered.
 
-The video timeline remains 30 FPS even if the computer processes only 8 frames
-per wall-clock second. File processing then takes longer than the video. True
-live 30 FPS webcam analysis requires the entire pipeline—especially YOLO—to
-sustain 30 FPS.
+Webcam queues discard stale waiting frames rather than accumulating latency;
+every discard is counted. File queues block and retain all frames even when
+processing takes longer than the source video. The real-time default is
+`yolo26s-pose.pt`, while dataset generation deliberately retains the larger
+`yolo26l-pose.pt` for consistency with existing training data.
+
+For a lower-overhead measurement, disable rendering outputs independently:
+
+```powershell
+--no-save-annotated --no-save-raw
+```
 
 ## Strike analytics
 
@@ -296,14 +306,18 @@ conda run -n muay-thai python -m unittest discover `
 
 `test_action_preprocessing.py` checks mirroring and video splits.
 `test_action_analytics.py` checks scale, event transitions and quadratic peak
-interpolation.
+interpolation. `test_action_realtime.py` proves numeric inference preprocessing
+and temporal buffers remain equivalent to their training implementations.
 
 ## Common sources of confusion
 
-### “The output says 8 FPS, but my video is 30 FPS”
+### “Capture, pose and action FPS are different”
 
-Eight FPS is processing throughput; 30 FPS is video time. File frames can all
-be analysed and written at 30 FPS while taking longer than real time to compute.
+They are separate pipeline stages. Webcam capture reports measured camera
+arrivals, pose reports fresh YOLO results and actions reports completed dual
+classifications plus analytics. File capture may run faster than 30 FPS in
+wall-clock time because its timestamps still belong to the 30-FPS video
+timeline. Inspect p95 latency and dropped frames as well as average throughput.
 
 ### “One video does not contain every class”
 

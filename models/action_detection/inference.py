@@ -1,35 +1,44 @@
-"""Shared real-time video inference for pose-based action classifiers."""
+"""Shared concurrent video inference for pose-based action classifiers."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import queue
+import threading
 import time
-from collections import deque
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 import numpy as np
-import pandas as pd
 from ultralytics import YOLO
 
 from models import utils as modelutils
 from models.action_detection.analytics import AnalyticsConfig, StrikeAnalytics
-from models.action_detection.analytics.types import JointPoint
 from models.action_detection.config import (
     CLASS_COLORS,
     SKELETON_EDGES,
     validate_task_labels,
 )
-from models.action_detection.preprocessing import (
-    causal_windows,
-    normalize_selected_frames,
-    select_largest_person,
+from models.action_detection.realtime.actions import (
+    ActionModelRuntime,
+    ActionPrediction,
+    DualActionPredictor,
+)
+from models.action_detection.realtime.output import AsyncVideoWriter
+from models.action_detection.realtime.pose import SelectedPose, pose_points
+from models.action_detection.realtime.telemetry import (
+    PerformanceSnapshot,
+    PipelineTelemetry,
+)
+from models.action_detection.realtime.types import END_OF_STREAM, PosePacket
+from models.action_detection.realtime.workers import (
+    run_capture_worker,
+    run_pose_worker,
 )
 from models.yolo import config as yolocfg
-from models.yolo import utils as yoloutils
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -39,32 +48,36 @@ DEFAULT_RAW_VIDEO_DIR = ROOT_DIR / "media" / "videos" / "raw"
 
 
 @dataclass(frozen=True)
-class ActionModelRuntime:
-    """
-    Loaded classifier plus the preprocessing settings saved at training.
-    """
+class _OutputResources:
+    """Paths and optional asynchronous writers owned by one inference run."""
 
-    model_name: str
-    classification_task: str
-    class_names: tuple[str, ...]
-    window_size: int
-    confidence_threshold: float
-    coordinate_clip: float
-    predict_probabilities: Callable[[np.ndarray], np.ndarray]
+    output_paths: dict[str, Path]
+    analytics_events_path: Path
+    analytics_summary_path: Path
+    raw_video_path: Path
+    annotated_writer: AsyncVideoWriter | None
+    raw_writer: AsyncVideoWriter | None
 
 
 @dataclass(frozen=True)
-class ActionPrediction:
-    """
-    One task model's prediction for the current frame.
-    """
+class _WorkerResources:
+    """Queues, stop state and threads forming the capture/pose pipeline."""
 
-    classification_task: str
-    model_name: str
-    class_names: tuple[str, ...]
-    class_name: str
-    probability: float
-    probabilities: np.ndarray
+    pose_queue: queue.Queue
+    error_queue: queue.Queue[BaseException]
+    stop_event: threading.Event
+    capture_thread: threading.Thread
+    pose_thread: threading.Thread
+
+
+@dataclass(frozen=True)
+class _EvaluatedFrame:
+    """Ordered action/analytics result ready for display and persistence."""
+
+    predictions: tuple[ActionPrediction, ...]
+    analytics_snapshot: object
+    performance: PerformanceSnapshot
+    annotated_frame: np.ndarray | None
 
 
 def validate_model_bundle(
@@ -73,12 +86,9 @@ def validate_model_bundle(
     classification_task: str,
     source: Path,
 ) -> tuple[str, ...]:
-    """
-    Validate task metadata and classes in a saved model bundle.
+    """Validate task metadata and classes in a saved model bundle.
 
     Usage: Inference only.
-
-    Raises ValueError if the bundle's task or classes are invalid.
     """
 
     saved_task = bundle.get("classification_task")
@@ -102,8 +112,7 @@ def build_inference_parser(
     default_guard_weights: Path,
     default_striking_weights: Path,
 ) -> argparse.ArgumentParser:
-    """
-    Create the arguments shared by the TCN and LightGBM entry points.
+    """Create arguments shared by the TCN and LightGBM entry points.
 
     Usage: Inference only.
     """
@@ -119,18 +128,30 @@ def build_inference_parser(
         "--striking-weights",
         type=Path,
         default=default_striking_weights,
-        help="Trained striking-classifier bundle (required).",
+        help="Trained striking-classifier bundle.",
     )
     parser.add_argument(
         "--pose-model",
         type=Path,
-        default=yolocfg.YOLO_WEIGHTS,
+        default=yolocfg.YOLO_REALTIME_WEIGHTS,
         help="Ultralytics YOLO pose weights.",
+    )
+    parser.add_argument(
+        "--pose-imgsz",
+        type=int,
+        default=640,
+        help="YOLO pose inference size (default: 640).",
+    )
+    parser.add_argument(
+        "--pose-precision",
+        choices=("fp32", "fp16"),
+        default="fp32",
+        help="YOLO arithmetic precision; validate accuracy before using fp16.",
     )
     parser.add_argument(
         "--source",
         default="0",
-        help="Video path or webcam index, for example 0.",
+        help="Explicit video path or webcam index, for example 0.",
     )
     parser.add_argument(
         "--output",
@@ -150,9 +171,19 @@ def build_inference_parser(
         help="Show the annotated inference stream; press q to stop.",
     )
     parser.add_argument(
+        "--no-save-annotated",
+        action="store_true",
+        help="Do not encode the annotated output video.",
+    )
+    parser.add_argument(
+        "--no-save-raw",
+        action="store_true",
+        help="Do not save an unannotated webcam recording.",
+    )
+    parser.add_argument(
         "--max-frames",
         type=int,
-        help="Optional 30-FPS output-frame limit.",
+        help="Optional processed-frame limit.",
     )
     parser.add_argument(
         "--yolo-confidence",
@@ -175,34 +206,49 @@ def build_inference_parser(
         help="Requested webcam capture height.",
     )
     parser.add_argument(
+        "--frame-queue-size",
+        type=int,
+        default=4,
+        help="Bounded capture/pose queue capacity (default: 4).",
+    )
+    parser.add_argument(
+        "--output-queue-size",
+        type=int,
+        default=12,
+        help="Bounded queue capacity for each video encoder (default: 12).",
+    )
+    parser.add_argument(
         "--metrics",
         nargs="+",
         choices=("count", "speed"),
         default=("count", "speed"),
-        help=(
-            "Strike metrics to compute. Defaults to both; pass only count or "
-            "only speed when desired."
-        ),
+        help="Strike metrics to compute; defaults to count and speed.",
     )
     parser.add_argument(
         "--person-height-cm",
         type=float,
         default=175.0,
-        help="Person height used for approximate physical speed (default: 175).",
+        help="Person height used for approximate physical speed.",
     )
     return parser
 
 
 def _validate_arguments(args: argparse.Namespace) -> None:
-    """
-    Validate shared video-inference command-line arguments.
+    """Validate shared video-inference command-line arguments.
 
     Usage: Inference only.
     """
+
     if args.max_frames is not None and args.max_frames < 1:
         raise ValueError("--max-frames must be at least 1")
     if not 0.0 <= args.yolo_confidence <= 1.0:
         raise ValueError("--yolo-confidence must be between 0 and 1")
+    if args.pose_imgsz < 32:
+        raise ValueError("--pose-imgsz must be at least 32")
+    if args.frame_queue_size < 1:
+        raise ValueError("--frame-queue-size must be at least 1")
+    if args.output_queue_size < 1:
+        raise ValueError("--output-queue-size must be at least 1")
     if args.camera_width is not None and args.camera_width < 1:
         raise ValueError("--camera-width must be positive")
     if args.camera_height is not None and args.camera_height < 1:
@@ -211,36 +257,17 @@ def _validate_arguments(args: argparse.Namespace) -> None:
         raise ValueError("--person-height-cm must be between 50 and 250")
 
 
-def _open_writer(path: Path, frame: np.ndarray) -> cv2.VideoWriter:
-    """
-    Open a 30 FPS video writer using the dimensions of the first frame.
-
-    Usage: Inference only.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    height, width = frame.shape[:2]
-    writer = cv2.VideoWriter(
-        str(path),
-        cv2.VideoWriter_fourcc(*"mp4v"),
-        TARGET_FPS,
-        (width, height),
-    )
-    if not writer.isOpened():
-        raise RuntimeError(f"Could not open video writer: {path}")
-    return writer
-
-
 def _webcam_raw_path(
     raw_output_dir: Path,
     source_label: str,
     model_name: str,
     run_dir: Path,
 ) -> Path:
-    """
-    Build the distinctive path for an unannotated webcam recording.
+    """Build the distinctive path for an unannotated webcam recording.
 
     Usage: Inference only.
     """
+
     run_timestamp = run_dir.name.rsplit("__", 1)[-1]
     filename = (
         f"{modelutils.slugify(source_label)}__"
@@ -249,225 +276,105 @@ def _webcam_raw_path(
     return raw_output_dir / filename
 
 
-def _iter_cfr_frames(
-    capture: cv2.VideoCapture,
-    *,
-    webcam: bool,
-) -> Iterator[tuple[int, float, np.ndarray]]:
-    """
-    Yield a 30-FPS constant-rate stream. Produce frames on a constant 30-FPS output timeline.
-
-    Each yielded value is:
-        (output_frame_index, timestamp_in_seconds, frame_pixels)
-
-    Usage: Inference only.
-
-    Webcam input is paced in real time. Video-file input is resampled
-    from its declared frame rate to TARGET_FPS (including frame dropping or duplication)
-    """
-    # Webcam input must be paced using the computer's clock (time.perf_counter()) because frames arrive live rather than being read from an already recorded timeline.
-    if webcam:
-        frame_index = 0
-        frame_period = 1.0 / TARGET_FPS
-        next_deadline = time.perf_counter() # Duration of one output frame. At 30 FPS this is about 0.0333 seconds.
-        while capture.isOpened():
-            # Wait until the scheduled time for the next frame.
-            delay = next_deadline - time.perf_counter() 
-            if delay > 0:
-                time.sleep(delay)
-            # Ask OpenCV for the next webcam image.
-            success, frame = capture.read()
-            if not success:
-                break
-            # Produce one output item: (output_frame_index, timestamp_in_seconds, frame_pixels)
-            yield frame_index, frame_index / TARGET_FPS, frame # Execution PAUSES HERE until the caller requests another item
-
-            # Code below resumes after the yield.
-            frame_index += 1
-            next_deadline += frame_period # Schedule next frame
-            now = time.perf_counter()
-            # If the next frame is already late, skip ahead to the current time to avoid accumulating lag.
-            if next_deadline < now: 
-                next_deadline = now
-        return
-
-    # For a video file, obtain the frame rate recorded in its metadata.
-    source_fps = float(capture.get(cv2.CAP_PROP_FPS))
-    if not np.isfinite(source_fps) or source_fps <= 0:
-        raise RuntimeError("The input video does not report a valid frame rate")
-
-    source_frame_index = 0 # frame index in the original video file
-    output_frame_index = 0 # frame index in the 30-FPS output timeline
-    last_frame: np.ndarray | None = None
-    # Decode the source file one frame at a time, yielding frames on the 30-FPS output timeline. This may drop or duplicate frames to achieve a constant output rate.
-    while capture.isOpened():
-        success, frame = capture.read()
-        if not success:
-            break
-
-        last_frame = frame
-        source_time = source_frame_index / source_fps
-        # Yield the current frame repeatedly until the output timeline catches up to the next source frame's timestamp. This may duplicate frames if the source FPS is lower than TARGET_FPS.
-        while output_frame_index / TARGET_FPS <= source_time + 1e-9:
-            yield (
-                output_frame_index,
-                output_frame_index / TARGET_FPS,
-                frame.copy(),
-            )
-            output_frame_index += 1
-        source_frame_index += 1
-
-    # Handle the case where the source video ends but the output timeline has not yet reached the end of the last frame's duration. This may duplicate the last frame if the source FPS is lower than TARGET_FPS.
-    source_duration = source_frame_index / source_fps
-    while (
-        last_frame is not None
-        and output_frame_index / TARGET_FPS < source_duration - 1e-9
-    ):
-        yield (
-            output_frame_index,
-            output_frame_index / TARGET_FPS,
-            last_frame.copy(),
-        )
-        output_frame_index += 1
-
-
-def _raw_detection_rows(
-    result,
-    *,
-    frame_index: int,
-    frame: np.ndarray,
-) -> pd.DataFrame:
-    """
-    Convert one YOLO result to the raw row shape used by preprocessing.
+def _configure_capture(
+    args: argparse.Namespace,
+) -> tuple[cv2.VideoCapture, bool, str]:
+    """Open the requested source and configure low-latency webcam capture.
 
     Usage: Inference only.
     """
 
-    people = yoloutils.keypoints_to_people(result)
-    boxes = yoloutils.boxes_to_detections(result)
-    height, width = frame.shape[:2]
-    base_row: dict[str, object] = {
-        "video_id": "inference",
-        "frame_index": frame_index,
-        "pose_detected": 0,
-        "bbox_detected": 0,
-        "people_detected": len(people),
-        "boxes_detected": len(boxes),
-        "detection_index": np.nan,
-        "person_index": np.nan,
-        "box_index": np.nan,
-        "frame_width_px": width,
-        "frame_height_px": height,
-        "bbox_confidence": np.nan,
-        "bbox_class_id": np.nan,
-        "bbox_x1_px": np.nan,
-        "bbox_y1_px": np.nan,
-        "bbox_x2_px": np.nan,
-        "bbox_y2_px": np.nan,
-    }
-    for joint_name in yolocfg.YOLO_KEYPOINT_NAMES:
-        base_row[f"{joint_name}_x_px"] = np.nan
-        base_row[f"{joint_name}_y_px"] = np.nan
-        base_row[f"{joint_name}_confidence"] = np.nan
+    capture_source, source_label = modelutils.parse_source(args.source)
+    webcam = isinstance(capture_source, int)
+    capture = cv2.VideoCapture(capture_source)
+    if not capture.isOpened():
+        raise RuntimeError(f"Could not open input source: {args.source}")
+    if not webcam:
+        return capture, webcam, source_label
 
-    detection_count = max(len(people), len(boxes))
-    if detection_count == 0:
-        return pd.DataFrame([base_row])
-
-    rows = []
-    for detection_index in range(detection_count):
-        row = dict(base_row)
-        row["detection_index"] = detection_index
-
-        if detection_index < len(boxes):
-            box = boxes[detection_index]
-            x1, y1, x2, y2 = box["xyxy"]
-            row.update(
-                {
-                    "bbox_detected": 1,
-                    "box_index": box["box_index"],
-                    "bbox_confidence": box["confidence"],
-                    "bbox_class_id": box["class_id"],
-                    "bbox_x1_px": x1,
-                    "bbox_y1_px": y1,
-                    "bbox_x2_px": x2,
-                    "bbox_y2_px": y2,
-                }
-            )
-
-        if detection_index < len(people):
-            person = people[detection_index]
-            row["pose_detected"] = 1
-            row["person_index"] = person["person_index"]
-            for keypoint in person["keypoints"]:
-                joint_name = keypoint["name"]
-                if joint_name not in yolocfg.YOLO_KEYPOINT_NAMES:
-                    continue
-                row[f"{joint_name}_x_px"] = keypoint["x"]
-                row[f"{joint_name}_y_px"] = keypoint["y"]
-                row[f"{joint_name}_confidence"] = keypoint["confidence"]
-        rows.append(row)
-
-    return pd.DataFrame(rows)
-
-
-def _select_pose(
-    result,
-    *,
-    frame_index: int,
-    frame: np.ndarray,
-) -> pd.DataFrame:
-    """
-    Select the largest person from one YOLO result and return its raw row(s).
-
-    Usage: Inference only.
-
-    If no person is detected, return a single row with NaN keypoints.
-    """
-    raw_rows = _raw_detection_rows(
-        result,
-        frame_index=frame_index,
-        frame=frame,
+    # Camera properties are requests to the backend. Runtime telemetry reports
+    # measured capture FPS rather than trusting these nominal values.
+    capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    capture.set(cv2.CAP_PROP_FPS, TARGET_FPS)
+    if args.camera_width is not None:
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, args.camera_width)
+    if args.camera_height is not None:
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, args.camera_height)
+    reported_fps = float(capture.get(cv2.CAP_PROP_FPS))
+    reported_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    reported_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print(
+        f"Webcam reports {reported_width}x{reported_height} at "
+        f"{reported_fps:.2f} nominal FPS"
     )
-    return select_largest_person(raw_rows).reset_index(drop=True)
+    return capture, webcam, source_label
 
 
-def _pose_points(pose: pd.Series) -> dict[str, JointPoint]:
-    """
-    Extract raw keypoints from the selected-person row.
+def _pose_predict_arguments(args: argparse.Namespace) -> dict[str, object]:
+    """Translate stable CLI options into Ultralytics prediction arguments.
 
     Usage: Inference only.
     """
 
-    if not int(pose.get("pose_detected", 0) or 0):
-        return {}
-    return {
-        joint_name: JointPoint(
-            x_px=float(pose.get(f"{joint_name}_x_px", np.nan)),
-            y_px=float(pose.get(f"{joint_name}_y_px", np.nan)),
-            confidence=float(
-                pose.get(f"{joint_name}_confidence", np.nan)
-            ),
-        )
-        for joint_name in yolocfg.YOLO_KEYPOINT_NAMES
+    arguments: dict[str, object] = {
+        "verbose": False,
+        "conf": args.yolo_confidence,
+        "imgsz": args.pose_imgsz,
     }
+    if args.yolo_device:
+        arguments["device"] = args.yolo_device
+    if args.pose_precision == "fp16":
+        arguments["quantize"] = 16
+    return arguments
+
+
+def _warm_up_pose_model(
+    pose_model: YOLO,
+    capture: cv2.VideoCapture,
+    predict_arguments: dict[str, object],
+) -> None:
+    """Run two blank frames before capture timing starts.
+
+    Usage: Inference only.
+
+    Warm-up pays predictor construction and kernel initialization before the
+    real-time queues begin collecting latency measurements.
+    """
+
+    width = max(32, int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640)
+    height = max(32, int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480)
+    blank = np.zeros((height, width, 3), dtype=np.uint8)
+    pose_model(blank, **predict_arguments)
+    pose_model(blank, **predict_arguments)
+
+
+def _analytics_paths(output_paths: dict[str, Path]) -> tuple[Path, Path]:
+    """Build event CSV and summary JSON paths beside frame predictions.
+
+    Usage: Inference only.
+    """
+
+    prefix = output_paths["predictions"].name.removesuffix(
+        "_predictions.jsonl"
+    )
+    return (
+        output_paths["run_dir"] / f"{prefix}_events.csv",
+        output_paths["run_dir"] / f"{prefix}_summary.json",
+    )
 
 
 def draw_action_overlay(
     frame: np.ndarray,
-    pose: pd.Series,
+    pose: SelectedPose,
     *,
     predictions: Sequence[ActionPrediction],
     confidence_threshold: float,
-    processing_fps: float,
+    performance: PerformanceSnapshot,
     analytics_lines: Sequence[str] = (),
 ) -> np.ndarray:
-    """
-    Draw the selected pose and both task predictions on a BGR frame.
+    """Draw the selected skeleton, predictions, analytics and performance.
 
     Usage: Inference only.
-
-    Returns a copy of the frame with the overlay.
     """
 
     output = frame.copy()
@@ -486,12 +393,10 @@ def draw_action_overlay(
     )
     color = tuple(int(channel) for channel in reversed(color_rgb))
     points: dict[str, tuple[int, int]] = {}
-
-    if int(pose.get("pose_detected", 0) or 0):
-        for joint_name in yolocfg.YOLO_KEYPOINT_NAMES:
-            confidence = pose.get(f"{joint_name}_confidence", np.nan)
-            x = pose.get(f"{joint_name}_x_px", np.nan)
-            y = pose.get(f"{joint_name}_y_px", np.nan)
+    if pose.pose_detected:
+        for joint_index, joint_name in enumerate(yolocfg.YOLO_KEYPOINT_NAMES):
+            confidence = pose.keypoint_confidences[joint_index]
+            x, y = pose.keypoints_xy[joint_index]
             if not (
                 np.isfinite(confidence)
                 and np.isfinite(x)
@@ -511,7 +416,7 @@ def draw_action_overlay(
         cv2.circle(output, point, 5, (255, 255, 255), -1)
         cv2.circle(output, point, 5, color, 2)
 
-    header_height = 36 * len(predictions) + 34 + 26 * len(analytics_lines)
+    header_height = 36 * len(predictions) + 60 + 26 * len(analytics_lines)
     cv2.rectangle(
         output,
         (0, 0),
@@ -554,17 +459,12 @@ def draw_action_overlay(
             1,
             cv2.LINE_AA,
         )
-
-    status = (
-        f"processing {processing_fps:.1f} FPS | "
-        f"people {int(pose.get('people_detected', 0) or 0)}"
-    )
     cv2.putText(
         output,
-        status,
+        performance.overlay_text(),
         (16, header_height - 10),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
+        0.52,
         (220, 220, 220),
         1,
         cv2.LINE_AA,
@@ -572,299 +472,516 @@ def draw_action_overlay(
     return output
 
 
-def run_action_inference(
-    args: argparse.Namespace,
-    runtimes: Sequence[ActionModelRuntime],
-) -> None:
-    """
-    Run one YOLO pose pass and both action classifiers on every frame.
+def _striking_probabilities(
+    predictions: Sequence[ActionPrediction],
+) -> dict[str, float]:
+    """Extract the striking probability mapping consumed by analytics.
 
     Usage: Inference only.
-
-    Writes annotated video and JSONL predictions to disk, optionally displaying the annotated stream in real time. 
-
-    Raises ValueError if the arguments or runtimes are invalid.
-    Raises RuntimeError if the input source cannot be opened.
     """
 
-    _validate_arguments(args)
-    runtimes = tuple(runtimes)
-    runtime_tasks = tuple(runtime.classification_task for runtime in runtimes)
-    if set(runtime_tasks) != {"guard", "striking"} or len(runtimes) != 2:
-        raise ValueError(
-            "Inference requires exactly one guard and one striking runtime"
-        )
-    for runtime in runtimes:
-        if runtime.window_size < 1:
-            raise ValueError(
-                f"{runtime.model_name} window_size must be at least 1"
-            )
-        validate_task_labels(
-            runtime.classification_task,
-            runtime.class_names,
-            source=runtime.model_name,
-        )
-
-    capture_source, source_label = modelutils.parse_source(args.source)
-    webcam = isinstance(capture_source, int)
-    model_label = "+".join(
-        f"{runtime.model_name}-{runtime.classification_task}"
-        for runtime in runtimes
+    striking = next(
+        prediction
+        for prediction in predictions
+        if prediction.classification_task == "striking"
     )
+    return {
+        name: float(striking.probabilities[index])
+        for index, name in enumerate(striking.class_names)
+    }
+
+
+def _prediction_document(
+    packet: PosePacket,
+    predictions: Sequence[ActionPrediction],
+    analytics_snapshot,
+    performance: PerformanceSnapshot,
+) -> dict[str, object]:
+    """Build one JSON-safe persisted result for a completed pose frame.
+
+    Usage: Inference only.
+    """
+
+    pose = packet.pose
+    return {
+        "frame_index": packet.frame.frame_index,
+        "time_seconds": packet.frame.timestamp,
+        "predictions": {
+            prediction.classification_task: {
+                "model_name": prediction.model_name,
+                "class_name": prediction.class_name,
+                "confidence": prediction.probability,
+                "class_probabilities": {
+                    name: float(prediction.probabilities[index])
+                    for index, name in enumerate(prediction.class_names)
+                },
+            }
+            for prediction in predictions
+        },
+        "pose_detected": pose.pose_detected,
+        "people_detected": pose.people_detected,
+        "selected_detection_index": pose.detection_index,
+        "analytics": analytics_snapshot.as_record(),
+        "performance": {
+            "capture_fps": performance.capture_fps,
+            "pose_fps": performance.pose_fps,
+            "action_fps": performance.action_fps,
+            "pose_p95_ms": performance.pose_p95_ms,
+            "action_p95_ms": performance.action_p95_ms,
+            "end_to_end_p95_ms": performance.end_to_end_p95_ms,
+            "dropped_frames": performance.dropped_frames,
+        },
+    }
+
+
+def _raise_worker_error(error_queue: queue.Queue[BaseException]) -> None:
+    """Raise the first pending background-worker failure.
+
+    Usage: Inference only.
+    """
+
+    try:
+        error = error_queue.get_nowait()
+    except queue.Empty:
+        return
+    raise RuntimeError("Real-time inference worker failed") from error
+
+
+def _create_outputs(
+    args: argparse.Namespace,
+    *,
+    webcam: bool,
+    source_label: str,
+    model_label: str,
+    telemetry: PipelineTelemetry,
+) -> _OutputResources:
+    """Create timestamped paths and optional asynchronous video writers.
+
+    Usage: Inference only.
+    """
+
     output_paths = modelutils.build_output_paths(
         args.output,
         source_label,
         model_label,
     )
-    raw_video_path = (
-        _webcam_raw_path(
-            args.raw_output,
-            source_label,
-            model_label,
-            output_paths["run_dir"],
+    events_path, summary_path = _analytics_paths(output_paths)
+    raw_video_path = _webcam_raw_path(
+        args.raw_output,
+        source_label,
+        model_label,
+        output_paths["run_dir"],
+    )
+    annotated_writer = None
+    if not args.no_save_annotated:
+        annotated_writer = AsyncVideoWriter(
+            output_paths["video"],
+            fps=TARGET_FPS,
+            queue_size=args.output_queue_size,
+            telemetry=telemetry,
+            stage_name="annotated_output",
+            drop_when_full=webcam,
         )
-        if webcam
-        else None
-    )
-    output_prefix = output_paths["predictions"].name.removesuffix(
-        "_predictions.jsonl"
-    )
-    analytics_events_path = (
-        output_paths["run_dir"] / f"{output_prefix}_events.csv"
-    )
-    analytics_summary_path = (
-        output_paths["run_dir"] / f"{output_prefix}_summary.json"
+    raw_writer = None
+    if webcam and not args.no_save_raw:
+        raw_writer = AsyncVideoWriter(
+            raw_video_path,
+            fps=TARGET_FPS,
+            queue_size=args.output_queue_size,
+            telemetry=telemetry,
+            stage_name="raw_output",
+            drop_when_full=True,
+        )
+    return _OutputResources(
+        output_paths=output_paths,
+        analytics_events_path=events_path,
+        analytics_summary_path=summary_path,
+        raw_video_path=raw_video_path,
+        annotated_writer=annotated_writer,
+        raw_writer=raw_writer,
     )
 
-    capture = cv2.VideoCapture(capture_source)
-    if not capture.isOpened():
-        raise RuntimeError(f"Could not open input source: {args.source}")
-    if webcam:
-        capture.set(cv2.CAP_PROP_FPS, TARGET_FPS) # Request 30 FPS capture from the webcam
-        if args.camera_width is not None:
-            capture.set(cv2.CAP_PROP_FRAME_WIDTH, args.camera_width)
-        if args.camera_height is not None:
-            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, args.camera_height)
-        reported_fps = float(capture.get(cv2.CAP_PROP_FPS))
-        if reported_fps > 0 and abs(reported_fps - TARGET_FPS) > 0.5:
-            print(
-                f"Warning: webcam reports {reported_fps:.2f} FPS after "
-                f"requesting {TARGET_FPS:.0f}; output is still written as "
-                "30-FPS CFR."
-            )
 
-    pose_model = YOLO(str(args.pose_model))
-    histories = {
-        runtime.classification_task: deque(maxlen=runtime.window_size)
-        for runtime in runtimes
-    }
-    analytics = StrikeAnalytics(
-        AnalyticsConfig(
-            enabled_metrics=tuple(args.metrics),
-            person_height_m=args.person_height_cm / 100.0,
-            keypoint_confidence=min(
-                runtime.confidence_threshold for runtime in runtimes
+def _start_workers(
+    capture: cv2.VideoCapture,
+    pose_model: YOLO,
+    *,
+    args: argparse.Namespace,
+    webcam: bool,
+    predict_arguments: dict[str, object],
+    telemetry: PipelineTelemetry,
+    raw_writer: AsyncVideoWriter | None,
+) -> _WorkerResources:
+    """Create and start the capture and pose-inference threads.
+
+    Usage: Inference only.
+    """
+
+    frame_queue: queue.Queue = queue.Queue(maxsize=args.frame_queue_size)
+    pose_queue: queue.Queue = queue.Queue(maxsize=args.frame_queue_size)
+    error_queue: queue.Queue[BaseException] = queue.Queue()
+    stop_event = threading.Event()
+    capture_thread = threading.Thread(
+        target=run_capture_worker,
+        kwargs={
+            "capture": capture,
+            "webcam": webcam,
+            "target_fps": TARGET_FPS,
+            "output_queue": frame_queue,
+            "stop_event": stop_event,
+            "error_queue": error_queue,
+            "telemetry": telemetry,
+            "raw_frame_callback": (
+                None if raw_writer is None else raw_writer.submit
             ),
-        )
+        },
+        name="frame-capture",
+        daemon=True,
     )
-    annotated_writer: cv2.VideoWriter | None = None
-    raw_writer: cv2.VideoWriter | None = None
-    processed_frames = 0
-    started_at = time.perf_counter()
-    display_started_at = started_at
-
+    pose_thread = threading.Thread(
+        target=run_pose_worker,
+        kwargs={
+            "pose_model": pose_model,
+            "input_queue": frame_queue,
+            "output_queue": pose_queue,
+            "stop_event": stop_event,
+            "error_queue": error_queue,
+            "telemetry": telemetry,
+            "predict_arguments": predict_arguments,
+            "webcam": webcam,
+        },
+        name="pose-inference",
+        daemon=True,
+    )
+    resources = _WorkerResources(
+        pose_queue=pose_queue,
+        error_queue=error_queue,
+        stop_event=stop_event,
+        capture_thread=capture_thread,
+        pose_thread=pose_thread,
+    )
     try:
-        with output_paths["predictions"].open(
-            "w", encoding="utf-8"
-        ) as predictions_file:
-            for frame_index, timestamp, frame in _iter_cfr_frames(
-                capture,
-                webcam=webcam,
-            ): # Yield one frame at a time on a 30-FPS output timeline
+        pose_thread.start()
+        capture_thread.start()
+    except BaseException:
+        stop_event.set()
+        capture_thread.join(timeout=1.0)
+        pose_thread.join(timeout=1.0)
+        raise
+    return resources
 
-                # Write frame to raw video
-                if raw_video_path is not None:
-                    if raw_writer is None:
-                        raw_writer = _open_writer(raw_video_path, frame)
-                    raw_writer.write(frame)
 
-                inference_started = time.perf_counter()
-                # Run YOLO pose detection and select the largest person
-                yolo_arguments: dict[str, object] = {
-                    "verbose": False,
-                    "conf": args.yolo_confidence,
-                }
-                if args.yolo_device:
-                    yolo_arguments["device"] = args.yolo_device
-                result = pose_model(frame, **yolo_arguments)[0]
-                selected_pose = _select_pose(
-                    result,
-                    frame_index=frame_index,
-                    frame=frame,
-                )
-                pose = selected_pose.iloc[0]
+def _evaluate_pose_packet(
+    packet: PosePacket,
+    *,
+    action_predictor: DualActionPredictor,
+    analytics: StrikeAnalytics,
+    telemetry: PipelineTelemetry,
+    confidence_threshold: float,
+    render_output: bool,
+) -> _EvaluatedFrame:
+    """Run both classifiers and ordered analytics for one pose packet.
 
-                # Run both action classifiers
-                frame_predictions = []
-                for runtime in runtimes:
-                    current_features = normalize_selected_frames(
-                        selected_pose,
-                        confidence_threshold=runtime.confidence_threshold,
-                        coordinate_clip=runtime.coordinate_clip,
-                    )[0]
-                    history = histories[runtime.classification_task]
-                    history.append(current_features)
-                    history_features = np.stack(tuple(history)).astype(
-                        np.float32,
-                        copy=False,
-                    )
-                    window = causal_windows(
-                        history_features,
-                        runtime.window_size,
-                    )[-1]
-                    probabilities = np.asarray(
-                        runtime.predict_probabilities(window),
-                        dtype=np.float32,
-                    ).reshape(-1)
-                    if probabilities.shape != (len(runtime.class_names),):
-                        raise ValueError(
-                            f"{runtime.model_name} returned "
-                            f"{probabilities.shape} probabilities for "
-                            f"{len(runtime.class_names)} classes"
-                        )
-                    if not np.all(np.isfinite(probabilities)):
-                        raise ValueError(
-                            f"{runtime.model_name} returned non-finite "
-                            "probabilities"
-                        )
-                    class_index = int(np.argmax(probabilities))
-                    frame_predictions.append(
-                        ActionPrediction(
-                            classification_task=runtime.classification_task,
-                            model_name=runtime.model_name,
-                            class_names=runtime.class_names,
-                            class_name=runtime.class_names[class_index],
-                            probability=float(probabilities[class_index]),
-                            probabilities=probabilities,
-                        )
-                    )
-                # Update analytics with the latest pose and striking probabilities
-                striking_prediction = next(
-                    prediction
-                    for prediction in frame_predictions
-                    if prediction.classification_task == "striking"
-                )
-                analytics_snapshot = analytics.update(
-                    frame_index=frame_index,
-                    timestamp=timestamp,
-                    pose_points=_pose_points(pose),
-                    striking_probabilities={
-                        class_name: float(
-                            striking_prediction.probabilities[class_index]
-                        )
-                        for class_index, class_name in enumerate(
-                            striking_prediction.class_names
-                        )
-                    },
-                )
-                elapsed = max(time.perf_counter() - inference_started, 1e-9)
-                annotated_frame = draw_action_overlay(
-                    frame,
-                    pose,
-                    predictions=frame_predictions,
-                    confidence_threshold=min(
-                        runtime.confidence_threshold for runtime in runtimes
-                    ),
-                    processing_fps=1.0 / elapsed,
-                    analytics_lines=analytics.overlay_lines(
-                        analytics_snapshot
-                    ),
-                )
+    Usage: Inference only.
+    """
 
-                if annotated_writer is None:
-                    annotated_writer = _open_writer(
-                        output_paths["video"],
-                        annotated_frame,
-                    )
-                annotated_writer.write(annotated_frame)
-                predictions_file.write(
-                    json.dumps(
-                        {
-                            "frame_index": frame_index,
-                            "time_seconds": timestamp,
-                            "predictions": {
-                                prediction.classification_task: {
-                                    "model_name": prediction.model_name,
-                                    "class_name": prediction.class_name,
-                                    "confidence": prediction.probability,
-                                    "class_probabilities": {
-                                        name: float(
-                                            prediction.probabilities[index]
-                                        )
-                                        for index, name in enumerate(
-                                            prediction.class_names
-                                        )
-                                    },
-                                }
-                                for prediction in frame_predictions
-                            },
-                            "pose_detected": bool(pose["pose_detected"]),
-                            "people_detected": int(pose["people_detected"]),
-                            "selected_detection_index": (
-                                None
-                                if pd.isna(pose["detection_index"])
-                                else int(pose["detection_index"])
-                            ),
-                            "analytics": analytics_snapshot.as_record(),
-                        }
-                    )
-                    + "\n"
-                )
+    action_started = time.perf_counter()
+    predictions = action_predictor.predict(packet.pose)
+    analytics_snapshot = analytics.update(
+        frame_index=packet.frame.frame_index,
+        timestamp=packet.frame.timestamp,
+        pose_points=pose_points(packet.pose),
+        striking_probabilities=_striking_probabilities(predictions),
+    )
+    action_finished = time.perf_counter()
+    telemetry.record_latency("action", action_finished - action_started)
+    telemetry.record_event("action", action_finished)
+    telemetry.record_latency(
+        "end_to_end",
+        action_finished - packet.frame.captured_at,
+    )
+    performance = telemetry.snapshot()
+    annotated_frame = None
+    if render_output:
+        annotated_frame = draw_action_overlay(
+            packet.frame.frame,
+            packet.pose,
+            predictions=predictions,
+            confidence_threshold=confidence_threshold,
+            performance=performance,
+            analytics_lines=analytics.overlay_lines(analytics_snapshot),
+        )
+    return _EvaluatedFrame(
+        predictions=predictions,
+        analytics_snapshot=analytics_snapshot,
+        performance=performance,
+        annotated_frame=annotated_frame,
+    )
 
-                processed_frames += 1
-                if args.display:
-                    if not webcam:
-                        display_delay = (
-                            display_started_at
-                            + timestamp
-                            - time.perf_counter()
-                        )
-                        if display_delay > 0:
-                            time.sleep(display_delay)
-                    cv2.imshow(
-                        "Muay-ThAI - guard + striking",
-                        annotated_frame,
-                    )
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
+
+def _display_requests_stop(
+    frame: np.ndarray,
+    *,
+    webcam: bool,
+    source_timestamp: float,
+    display_started_at: float,
+) -> bool:
+    """Display one frame at source cadence and report a user quit request.
+
+    Usage: Inference only.
+    """
+
+    if not webcam:
+        delay = display_started_at + source_timestamp - time.perf_counter()
+        if delay > 0.0:
+            time.sleep(delay)
+    cv2.imshow("Muay-ThAI - guard + striking", frame)
+    return cv2.waitKey(1) & 0xFF == ord("q")
+
+
+def _consume_pose_stream(
+    args: argparse.Namespace,
+    *,
+    webcam: bool,
+    workers: _WorkerResources,
+    outputs: _OutputResources,
+    action_predictor: DualActionPredictor,
+    analytics: StrikeAnalytics,
+    telemetry: PipelineTelemetry,
+) -> tuple[int, float]:
+    """Consume ordered pose packets until source end, limit, or user stop.
+
+    Usage: Inference only.
+    """
+
+    processed_frames = 0
+    display_started_at = time.perf_counter()
+    confidence_threshold = min(
+        runtime.confidence_threshold
+        for runtime in action_predictor.runtimes
+    )
+    render_output = args.display or outputs.annotated_writer is not None
+    with outputs.output_paths["predictions"].open(
+        "w",
+        encoding="utf-8",
+    ) as predictions_file:
+        while True:
+            _raise_worker_error(workers.error_queue)
+            try:
+                item = workers.pose_queue.get(timeout=0.1)
+            except queue.Empty:
                 if (
-                    args.max_frames is not None
-                    and processed_frames >= args.max_frames
+                    not workers.capture_thread.is_alive()
+                    and not workers.pose_thread.is_alive()
                 ):
                     break
-        analytics.finalize()
+                continue
+            if item is END_OF_STREAM:
+                break
+            if not isinstance(item, PosePacket):
+                raise TypeError(f"Unexpected pose queue item: {type(item)}")
+
+            evaluated = _evaluate_pose_packet(
+                item,
+                action_predictor=action_predictor,
+                analytics=analytics,
+                telemetry=telemetry,
+                confidence_threshold=confidence_threshold,
+                render_output=render_output,
+            )
+            if (
+                outputs.annotated_writer is not None
+                and evaluated.annotated_frame is not None
+            ):
+                outputs.annotated_writer.submit(evaluated.annotated_frame)
+            predictions_file.write(
+                json.dumps(
+                    _prediction_document(
+                        item,
+                        evaluated.predictions,
+                        evaluated.analytics_snapshot,
+                        evaluated.performance,
+                    )
+                )
+                + "\n"
+            )
+            processed_frames += 1
+
+            if (
+                args.display
+                and evaluated.annotated_frame is not None
+                and _display_requests_stop(
+                    evaluated.annotated_frame,
+                    webcam=webcam,
+                    source_timestamp=item.frame.timestamp,
+                    display_started_at=display_started_at,
+                )
+            ):
+                workers.stop_event.set()
+                break
+            if (
+                args.max_frames is not None
+                and processed_frames >= args.max_frames
+            ):
+                workers.stop_event.set()
+                break
+    _raise_worker_error(workers.error_queue)
+    return processed_frames, time.perf_counter()
+
+
+def _close_output_writers(outputs: _OutputResources | None) -> None:
+    """Drain all active output writers.
+
+    Usage: Inference only.
+    """
+
+    if outputs is None:
+        return
+    errors = []
+    for writer in (outputs.annotated_writer, outputs.raw_writer):
+        if writer is None:
+            continue
+        try:
+            writer.close()
+        except BaseException as error:
+            errors.append(error)
+    if errors:
+        raise errors[0]
+
+
+def _stop_pipeline(
+    capture: cv2.VideoCapture,
+    workers: _WorkerResources | None,
+    outputs: _OutputResources | None,
+) -> None:
+    """Stop workers, release capture, drain encoders and close GUI state.
+
+    Usage: Inference only.
+    """
+
+    if workers is not None:
+        workers.stop_event.set()
+    capture.release()
+    if workers is not None:
+        workers.capture_thread.join(timeout=5.0)
+        workers.pose_thread.join(timeout=5.0)
+    try:
+        _close_output_writers(outputs)
     finally:
-        capture.release()
-        if annotated_writer is not None:
-            annotated_writer.release()
-        if raw_writer is not None:
-            raw_writer.release()
         cv2.destroyAllWindows()
 
-    analytics.write_outputs(
-        analytics_events_path,
-        analytics_summary_path,
-    )
 
-    duration = max(time.perf_counter() - started_at, 1e-9)
+def _report_run(
+    *,
+    processed_frames: int,
+    active_duration: float,
+    telemetry: PipelineTelemetry,
+    outputs: _OutputResources,
+) -> None:
+    """Print final throughput, drop counts and generated artifact paths.
+
+    Usage: Inference only.
+    """
+
+    performance = telemetry.snapshot()
     print(
-        f"Processed {processed_frames:,} CFR frames at "
-        f"{processed_frames / duration:.1f} average FPS"
+        f"Processed {processed_frames:,} frames at "
+        f"{processed_frames / max(active_duration, 1e-9):.1f} end-to-end "
+        "FPS including source startup"
     )
-    print(f"Saved predictions to {output_paths['predictions']}")
-    print(f"Saved strike events to {analytics_events_path}")
-    print(f"Saved analytics summary to {analytics_summary_path}")
-    if annotated_writer is not None:
-        print(f"Saved annotated video to {output_paths['video']}")
-    if raw_video_path is not None and raw_writer is not None:
-        print(f"Saved raw webcam video to {raw_video_path}")
+    print(performance.overlay_text())
+    if telemetry.drop_counts():
+        print(f"Dropped items by stage: {telemetry.drop_counts()}")
+    print(f"Saved predictions to {outputs.output_paths['predictions']}")
+    print(f"Saved strike events to {outputs.analytics_events_path}")
+    print(f"Saved analytics summary to {outputs.analytics_summary_path}")
+    if outputs.annotated_writer is not None:
+        print(
+            f"Saved {outputs.annotated_writer.written_frames:,} annotated "
+            f"frames to {outputs.output_paths['video']}"
+        )
+    if outputs.raw_writer is not None:
+        print(
+            f"Saved {outputs.raw_writer.written_frames:,} raw webcam frames "
+            f"to {outputs.raw_video_path}"
+        )
+
+
+def run_action_inference(
+    args: argparse.Namespace,
+    runtimes: Sequence[ActionModelRuntime],
+) -> None:
+    """Run concurrent capture, pose, dual-action and analytics inference.
+
+    Usage: Inference only.
+
+    Setup, ordered consumption, shutdown and reporting are delegated to focused
+    helpers so changes to one pipeline concern do not enlarge this coordinator.
+    """
+
+    _validate_arguments(args)
+    action_predictor = DualActionPredictor(runtimes)
+    capture, webcam, source_label = _configure_capture(args)
+    model_label = "+".join(
+        f"{runtime.model_name}-{runtime.classification_task}"
+        for runtime in action_predictor.runtimes
+    )
+    predict_arguments = _pose_predict_arguments(args)
+    outputs: _OutputResources | None = None
+    workers: _WorkerResources | None = None
+    try:
+        pose_model = YOLO(str(args.pose_model))
+        _warm_up_pose_model(pose_model, capture, predict_arguments)
+        telemetry = PipelineTelemetry()
+        analytics = StrikeAnalytics(
+            AnalyticsConfig(
+                enabled_metrics=tuple(args.metrics),
+                person_height_m=args.person_height_cm / 100.0,
+                keypoint_confidence=min(
+                    runtime.confidence_threshold
+                    for runtime in action_predictor.runtimes
+                ),
+            )
+        )
+        outputs = _create_outputs(
+            args,
+            webcam=webcam,
+            source_label=source_label,
+            model_label=model_label,
+            telemetry=telemetry,
+        )
+        workers = _start_workers(
+            capture,
+            pose_model,
+            args=args,
+            webcam=webcam,
+            predict_arguments=predict_arguments,
+            telemetry=telemetry,
+            raw_writer=outputs.raw_writer,
+        )
+        started_at = time.perf_counter()
+        processed_frames, inference_finished_at = _consume_pose_stream(
+            args,
+            webcam=webcam,
+            workers=workers,
+            outputs=outputs,
+            action_predictor=action_predictor,
+            analytics=analytics,
+            telemetry=telemetry,
+        )
+        analytics.finalize()
+    finally:
+        _stop_pipeline(capture, workers, outputs)
+
+    if outputs is None:
+        raise RuntimeError("Inference outputs were not initialized")
+    analytics.write_outputs(
+        outputs.analytics_events_path,
+        outputs.analytics_summary_path,
+    )
+    _report_run(
+        processed_frames=processed_frames,
+        active_duration=inference_finished_at - started_at,
+        telemetry=telemetry,
+        outputs=outputs,
+    )
