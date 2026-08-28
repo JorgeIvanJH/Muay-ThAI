@@ -11,7 +11,7 @@ YOLO_WEIGHTS = ROOT_DIR / "models" / "yolo" / "weights" / "yolo26l-pose.pt"
 # writers without dropping a frame. Inference can override it with
 # ``--pose-model`` when another camera resolution or GPU is used.
 YOLO_REALTIME_WEIGHTS = (
-    ROOT_DIR / "models" / "yolo" / "weights" / "yolo26s-pose.pt"
+    ROOT_DIR / "models" / "yolo" / "weights" / "yolo26l-pose.pt"
 )
 YOLO_INPUT = ROOT_DIR / "media" / "videos" / "Rodtang-taetat-2.mp4"
 YOLO_OUTPUT = ROOT_DIR / "output"

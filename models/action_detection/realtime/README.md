@@ -42,6 +42,7 @@ velocity history and strike-state transitions.
 | `workers.py` | Capture and YOLO worker lifecycle and error propagation. |
 | `output.py` | Bounded asynchronous MP4 writers. |
 | `telemetry.py` | Rolling FPS, latency and dropped-frame measurements. |
+| `display.py` | Independent live video/metrics windows and saved-video composition. |
 
 ## Webcam versus file semantics
 
@@ -99,6 +100,13 @@ Useful inference options include:
 A 30-FPS camera commonly reports about 29.5–30.0 measured FPS because of
 driver timing. The overlay reports separate capture, pose and action rates.
 It never describes synthetic timestamps as real inference throughput.
+
+With `--display`, presentation is isolated in `display.py`. It creates two
+independent windows: a resizable skeleton-video window that keeps the source
+aspect ratio, and an independently resizable metrics window. Either window can
+be maximized and its contents grow to the available screen without changing
+proportions. The saved annotated MP4 still receives the same metrics panel so
+that the recording remains self-contained.
 
 ## Safe shutdown
 

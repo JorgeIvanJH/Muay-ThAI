@@ -250,8 +250,13 @@ Shared inference then:
 3. Normalizes each distinct preprocessing configuration once and updates fixed
    guard and striking temporal buffers.
 4. Gets both probability vectors, then updates ordered strike analytics.
-5. Draws the skeleton, predictions, metrics and separate stage telemetry.
+5. Draws the skeleton in the live video window and sends predictions, metrics
+   and stage telemetry to a separate metrics window.
 6. Writes videos on bounded encoder threads while JSON remains ordered.
+
+The display logic lives in `realtime/display.py`, not in the inference loop.
+The saved annotated MP4 combines the skeleton and metrics so the recording
+remains understandable without the separate live metrics window.
 
 Webcam queues discard stale waiting frames rather than accumulating latency;
 every discard is counted. File queues block and retain all frames even when

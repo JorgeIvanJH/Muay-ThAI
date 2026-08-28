@@ -27,6 +27,12 @@ from models.action_detection.realtime.actions import (
     ActionPrediction,
     DualActionPredictor,
 )
+from models.action_detection.realtime.display import (
+    InferenceWindows,
+    close_inference_windows,
+    overlay_metrics_panel,
+    render_metrics_panel,
+)
 from models.action_detection.realtime.output import AsyncVideoWriter
 from models.action_detection.realtime.pose import SelectedPose, pose_points
 from models.action_detection.realtime.telemetry import (
@@ -76,6 +82,7 @@ class _EvaluatedFrame:
 
     predictions: tuple[ActionPrediction, ...]
     analytics_snapshot: object
+    analytics_lines: tuple[str, ...]
     performance: PerformanceSnapshot
     annotated_frame: np.ndarray | None
 
@@ -369,10 +376,8 @@ def draw_action_overlay(
     *,
     predictions: Sequence[ActionPrediction],
     confidence_threshold: float,
-    performance: PerformanceSnapshot,
-    analytics_lines: Sequence[str] = (),
 ) -> np.ndarray:
-    """Draw the selected skeleton, predictions, analytics and performance.
+    """Draw only the selected pose skeleton over a video frame.
 
     Usage: Inference only.
     """
@@ -416,59 +421,6 @@ def draw_action_overlay(
         cv2.circle(output, point, 5, (255, 255, 255), -1)
         cv2.circle(output, point, 5, color, 2)
 
-    header_height = 36 * len(predictions) + 60 + 26 * len(analytics_lines)
-    cv2.rectangle(
-        output,
-        (0, 0),
-        (width, min(height, header_height)),
-        (20, 20, 20),
-        -1,
-    )
-    for prediction_index, prediction in enumerate(predictions):
-        prediction_color_rgb = CLASS_COLORS.get(
-            prediction.class_name,
-            (255, 200, 0),
-        )
-        prediction_color = tuple(
-            int(channel) for channel in reversed(prediction_color_rgb)
-        )
-        label = (
-            f"{prediction.classification_task.capitalize()}: "
-            f"{prediction.class_name}  {prediction.probability:.1%}"
-        )
-        cv2.putText(
-            output,
-            label,
-            (16, 30 + prediction_index * 36),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.78,
-            prediction_color,
-            2,
-            cv2.LINE_AA,
-        )
-
-    analytics_start_y = 30 + 36 * len(predictions)
-    for line_index, line in enumerate(analytics_lines):
-        cv2.putText(
-            output,
-            line,
-            (16, analytics_start_y + line_index * 26),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.56,
-            (235, 235, 235),
-            1,
-            cv2.LINE_AA,
-        )
-    cv2.putText(
-        output,
-        performance.overlay_text(),
-        (16, header_height - 10),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.52,
-        (220, 220, 220),
-        1,
-        cv2.LINE_AA,
-    )
     return output
 
 
@@ -701,6 +653,7 @@ def _evaluate_pose_packet(
         action_finished - packet.frame.captured_at,
     )
     performance = telemetry.snapshot()
+    analytics_lines = analytics.overlay_lines(analytics_snapshot)
     annotated_frame = None
     if render_output:
         annotated_frame = draw_action_overlay(
@@ -708,35 +661,32 @@ def _evaluate_pose_packet(
             packet.pose,
             predictions=predictions,
             confidence_threshold=confidence_threshold,
-            performance=performance,
-            analytics_lines=analytics.overlay_lines(analytics_snapshot),
         )
     return _EvaluatedFrame(
         predictions=predictions,
         analytics_snapshot=analytics_snapshot,
+        analytics_lines=analytics_lines,
         performance=performance,
         annotated_frame=annotated_frame,
     )
 
 
-def _display_requests_stop(
-    frame: np.ndarray,
+def _pace_file_display(
     *,
     webcam: bool,
     source_timestamp: float,
     display_started_at: float,
-) -> bool:
-    """Display one frame at source cadence and report a user quit request.
+) -> None:
+    """Delay offline display until the corresponding source timestamp.
 
     Usage: Inference only.
     """
 
-    if not webcam:
-        delay = display_started_at + source_timestamp - time.perf_counter()
-        if delay > 0.0:
-            time.sleep(delay)
-    cv2.imshow("Muay-ThAI - guard + striking", frame)
-    return cv2.waitKey(1) & 0xFF == ord("q")
+    if webcam:
+        return
+    delay = display_started_at + source_timestamp - time.perf_counter()
+    if delay > 0.0:
+        time.sleep(delay)
 
 
 def _consume_pose_stream(
@@ -756,6 +706,7 @@ def _consume_pose_stream(
 
     processed_frames = 0
     display_started_at = time.perf_counter()
+    display = InferenceWindows() if args.display else None
     confidence_threshold = min(
         runtime.confidence_threshold
         for runtime in action_predictor.runtimes
@@ -789,11 +740,24 @@ def _consume_pose_stream(
                 confidence_threshold=confidence_threshold,
                 render_output=render_output,
             )
+            metrics_panel = None
+            if evaluated.annotated_frame is not None:
+                metrics_panel = render_metrics_panel(
+                    evaluated.predictions,
+                    evaluated.analytics_lines,
+                    evaluated.performance,
+                )
             if (
                 outputs.annotated_writer is not None
                 and evaluated.annotated_frame is not None
+                and metrics_panel is not None
             ):
-                outputs.annotated_writer.submit(evaluated.annotated_frame)
+                outputs.annotated_writer.submit(
+                    overlay_metrics_panel(
+                        evaluated.annotated_frame,
+                        metrics_panel,
+                    )
+                )
             predictions_file.write(
                 json.dumps(
                     _prediction_document(
@@ -808,17 +772,21 @@ def _consume_pose_stream(
             processed_frames += 1
 
             if (
-                args.display
+                display is not None
                 and evaluated.annotated_frame is not None
-                and _display_requests_stop(
-                    evaluated.annotated_frame,
+                and metrics_panel is not None
+            ):
+                _pace_file_display(
                     webcam=webcam,
                     source_timestamp=item.frame.timestamp,
                     display_started_at=display_started_at,
                 )
-            ):
-                workers.stop_event.set()
-                break
+                if display.show(
+                    evaluated.annotated_frame,
+                    metrics_panel,
+                ):
+                    workers.stop_event.set()
+                    break
             if (
                 args.max_frames is not None
                 and processed_frames >= args.max_frames
@@ -868,7 +836,7 @@ def _stop_pipeline(
     try:
         _close_output_writers(outputs)
     finally:
-        cv2.destroyAllWindows()
+        close_inference_windows()
 
 
 def _report_run(
