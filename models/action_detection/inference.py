@@ -76,6 +76,8 @@ def validate_model_bundle(
     """
     Validate task metadata and classes in a saved model bundle.
 
+    Usage: Inference only.
+
     Raises ValueError if the bundle's task or classes are invalid.
     """
 
@@ -102,6 +104,8 @@ def build_inference_parser(
 ) -> argparse.ArgumentParser:
     """
     Create the arguments shared by the TCN and LightGBM entry points.
+
+    Usage: Inference only.
     """
 
     parser = argparse.ArgumentParser(description=description)
@@ -190,6 +194,11 @@ def build_inference_parser(
 
 
 def _validate_arguments(args: argparse.Namespace) -> None:
+    """
+    Validate shared video-inference command-line arguments.
+
+    Usage: Inference only.
+    """
     if args.max_frames is not None and args.max_frames < 1:
         raise ValueError("--max-frames must be at least 1")
     if not 0.0 <= args.yolo_confidence <= 1.0:
@@ -203,6 +212,11 @@ def _validate_arguments(args: argparse.Namespace) -> None:
 
 
 def _open_writer(path: Path, frame: np.ndarray) -> cv2.VideoWriter:
+    """
+    Open a 30 FPS video writer using the dimensions of the first frame.
+
+    Usage: Inference only.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     height, width = frame.shape[:2]
     writer = cv2.VideoWriter(
@@ -222,6 +236,11 @@ def _webcam_raw_path(
     model_name: str,
     run_dir: Path,
 ) -> Path:
+    """
+    Build the distinctive path for an unannotated webcam recording.
+
+    Usage: Inference only.
+    """
     run_timestamp = run_dir.name.rsplit("__", 1)[-1]
     filename = (
         f"{modelutils.slugify(source_label)}__"
@@ -237,6 +256,8 @@ def _iter_cfr_frames(
 ) -> Iterator[tuple[int, float, np.ndarray]]:
     """
     Yield a 30-FPS constant-rate stream.
+
+    Usage: Inference only.
 
     Files are time-resampled using their declared frame rate, including frame
     dropping or duplication. Webcam capture is requested and paced at 30 FPS.
@@ -308,7 +329,11 @@ def _raw_detection_rows(
     frame_index: int,
     frame: np.ndarray,
 ) -> pd.DataFrame:
-    """Convert one YOLO result to the raw row shape used by preprocessing."""
+    """
+    Convert one YOLO result to the raw row shape used by preprocessing.
+
+    Usage: Inference only.
+    """
 
     people = yoloutils.keypoints_to_people(result)
     boxes = yoloutils.boxes_to_detections(result)
@@ -387,6 +412,8 @@ def _select_pose(
     """
     Select the largest person from one YOLO result and return its raw row(s).
 
+    Usage: Inference only.
+
     If no person is detected, return a single row with NaN keypoints.
     """
     raw_rows = _raw_detection_rows(
@@ -398,7 +425,11 @@ def _select_pose(
 
 
 def _pose_points(pose: pd.Series) -> dict[str, JointPoint]:
-    """Extract raw keypoints from the selected-person row."""
+    """
+    Extract raw keypoints from the selected-person row.
+
+    Usage: Inference only.
+    """
 
     if not int(pose.get("pose_detected", 0) or 0):
         return {}
@@ -425,6 +456,8 @@ def draw_action_overlay(
 ) -> np.ndarray:
     """
     Draw the selected pose and both task predictions on a BGR frame.
+
+    Usage: Inference only.
 
     Returns a copy of the frame with the overlay.
     """
@@ -539,6 +572,8 @@ def run_action_inference(
 ) -> None:
     """
     Run one YOLO pose pass and both action classifiers on every frame.
+
+    Usage: Inference only.
 
     Writes annotated video and JSONL predictions to disk, optionally displaying the annotated stream in real time. 
 

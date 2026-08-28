@@ -36,7 +36,11 @@ CANONICAL_SEGMENTS = (
 
 
 def canonical_segment_lengths(person_height_m: float) -> dict[str, float]:
-    """Return estimated segment lengths in metres for one supplied height."""
+    """
+    Return estimated segment lengths in metres for one supplied height.
+
+    Usage: Inference only.
+    """
 
     if not 0.5 <= person_height_m <= 2.5:
         raise ValueError("person_height_m must be between 0.5 and 2.5")
@@ -63,6 +67,11 @@ class AnthropometricScaleEstimator:
         projection_quantile: float = 0.9,
         smoothing_alpha: float = 0.15,
     ) -> None:
+        """
+        Initialize segment histories and scale-smoothing parameters.
+
+        Usage: Inference only.
+        """
         if history_size < 1:
             raise ValueError("history_size must be positive")
         if not 0.5 <= projection_quantile <= 1.0:
@@ -80,9 +89,19 @@ class AnthropometricScaleEstimator:
 
     @property
     def pixels_per_metre(self) -> float | None:
+        """
+        Return the latest smoothed physical image scale.
+
+        Usage: Inference only.
+        """
         return self._pixels_per_metre
 
     def update(self, points: dict[str, JointPoint]) -> float | None:
+        """
+        Update the session scale from currently visible long bones.
+
+        Usage: Inference only.
+        """
         for segment in CANONICAL_SEGMENTS:
             start = points.get(segment.start_joint)
             end = points.get(segment.end_joint)

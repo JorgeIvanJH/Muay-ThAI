@@ -36,6 +36,11 @@ def load_runtime(
     *,
     classification_task: str,
 ) -> ActionModelRuntime:
+    """
+    Load one task-specific LightGBM bundle as an inference runtime.
+
+    Usage: Inference only.
+    """
     if not weights.is_file():
         raise FileNotFoundError(f"LightGBM weights not found: {weights}")
 
@@ -48,6 +53,11 @@ def load_runtime(
     )
 
     def predict_probabilities(window: np.ndarray) -> np.ndarray:
+        """
+        Predict and align probabilities for one causal pose window.
+
+        Usage: Inference only.
+        """
         probabilities = model.predict_proba(window.reshape(1, -1))[0]
         aligned = np.zeros(len(class_names), dtype=np.float32)
         for model_index, class_index in enumerate(model.classes_):
@@ -66,6 +76,11 @@ def load_runtime(
 
 
 def main() -> None:
+    """
+    Load guard and striking LightGBMs and start shared video inference.
+
+    Usage: Inference only.
+    """
     parser = build_inference_parser(
         description=(
             "Run guard and striking LightGBM inference together at 30 FPS CFR."

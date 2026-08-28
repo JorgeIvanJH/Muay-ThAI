@@ -44,6 +44,11 @@ class StrikeStateMachineConfig:
     )
 
     def __post_init__(self) -> None:
+        """
+        Validate state-machine thresholds after configuration creation.
+
+        Usage: Inference only.
+        """
         if not 0.0 <= self.continuation_confidence <= self.activation_confidence <= 1.0:
             raise ValueError("invalid state-machine confidence thresholds")
         if self.candidate_frames < 1:
@@ -103,6 +108,11 @@ class StrikeEventStateMachine:
     """
 
     def __init__(self, config: StrikeStateMachineConfig | None = None) -> None:
+        """
+        Initialize an idle strike detector and its cooldown state.
+
+        Usage: Inference only.
+        """
         self.config = config or StrikeStateMachineConfig()
         self._candidate: _Candidate | None = None
         self._active: _ActiveEvent | None = None
@@ -111,6 +121,11 @@ class StrikeEventStateMachine:
 
     @property
     def state(self) -> StrikeState:
+        """
+        Return whether the detector is idle, confirming, or active.
+
+        Usage: Inference only.
+        """
         if self._active is not None:
             return StrikeState.ACTIVE
         if self._candidate is not None:
@@ -119,6 +134,11 @@ class StrikeEventStateMachine:
 
     @property
     def active_strike(self) -> tuple[str, str] | None:
+        """
+        Return the current candidate or active strike type and side.
+
+        Usage: Inference only.
+        """
         if self._active is not None:
             return self._active.strike_type, self._active.side
         if self._candidate is not None:
@@ -129,6 +149,11 @@ class StrikeEventStateMachine:
         self,
         observation: StrikeObservation,
     ) -> tuple[str, str, float, float] | None:
+        """
+        Select a threshold-passing strike and faster eligible limb.
+
+        Usage: Inference only.
+        """
         strike_type = max(
             STRIKE_TYPES,
             key=lambda name: float(observation.probabilities.get(name, 0.0)),
@@ -157,6 +182,11 @@ class StrikeEventStateMachine:
         self,
         observation: StrikeObservation,
     ) -> None:
+        """
+        Start, continue, replace, or reject the current candidate.
+
+        Usage: Inference only.
+        """
         eligible = self._eligible_candidate(observation)
         if eligible is None:
             self._candidate = None
@@ -182,6 +212,11 @@ class StrikeEventStateMachine:
             self._activate_candidate()
 
     def _activate_candidate(self) -> None:
+        """
+        Promote a sufficiently sustained candidate to an active event.
+
+        Usage: Inference only.
+        """
         if self._candidate is None:
             return
         observations = self._candidate.observations
@@ -206,6 +241,11 @@ class StrikeEventStateMachine:
         self._candidate = None
 
     def _finish_active(self) -> StrikeEvent | None:
+        """
+        Validate and emit the active event, then start its cooldown.
+
+        Usage: Inference only.
+        """
         active = self._active
         self._active = None
         if active is None:
@@ -238,6 +278,11 @@ class StrikeEventStateMachine:
         return event
 
     def update(self, observation: StrikeObservation) -> tuple[StrikeEvent, ...]:
+        """
+        Advance the state machine with one timestamped inference frame.
+
+        Usage: Inference only.
+        """
         if self._active is None:
             self._start_or_advance_candidate(observation)
             return ()
@@ -292,7 +337,11 @@ class StrikeEventStateMachine:
         return () if event is None else (event,)
 
     def flush(self) -> tuple[StrikeEvent, ...]:
-        """Complete a valid active event at end-of-stream; discard candidates."""
+        """
+        Complete a valid active event at end-of-stream; discard candidates.
+
+        Usage: Inference only.
+        """
 
         self._candidate = None
         event = self._finish_active()

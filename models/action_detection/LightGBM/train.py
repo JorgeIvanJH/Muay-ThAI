@@ -40,6 +40,11 @@ WEIGHTS_DIR = Path(__file__).resolve().parent / "weights"
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parse LightGBM training options from the command line.
+
+    Usage: Training only.
+    """
     parser = argparse.ArgumentParser(
         description="Train LightGBM on causal windows of normalized YOLO poses."
     )
@@ -85,6 +90,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """
+    Run the complete LightGBM training, validation and save workflow.
+
+    Usage: Training only.
+    """
     args = parse_args()
     classification_task = resolve_classification_task(
         args.task,

@@ -34,6 +34,11 @@ DEFAULT_STRIKING_WEIGHTS = WEIGHTS_DIR / "tcn_striking.pt"
 
 
 def _select_device(requested: str) -> torch.device:
+    """
+    Resolve the CPU or CUDA device used for TCN inference.
+
+    Usage: Inference only.
+    """
     if requested == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if requested == "cuda" and not torch.cuda.is_available():
@@ -47,6 +52,11 @@ def load_runtime(
     *,
     classification_task: str,
 ) -> ActionModelRuntime:
+    """
+    Load one task-specific TCN bundle as a shared inference runtime.
+
+    Usage: Inference only.
+    """
     if not weights.is_file():
         raise FileNotFoundError(f"TCN weights not found: {weights}")
 
@@ -62,6 +72,11 @@ def load_runtime(
     )
 
     def predict_probabilities(window: np.ndarray) -> np.ndarray:
+        """
+        Predict a class-probability vector for one causal pose window.
+
+        Usage: Inference only.
+        """
         inputs = torch.from_numpy(window[None]).to(device)
         with torch.no_grad():
             logits = model(inputs)
@@ -79,6 +94,11 @@ def load_runtime(
 
 
 def main() -> None:
+    """
+    Load guard and striking TCNs and start shared video inference.
+
+    Usage: Inference only.
+    """
     parser = build_inference_parser(
         description=(
             "Run guard and striking TCN inference together at 30 FPS CFR."

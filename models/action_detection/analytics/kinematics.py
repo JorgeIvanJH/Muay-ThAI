@@ -41,6 +41,11 @@ class KinematicsTracker:
         smoothing_alpha: float = 0.5,
         maximum_velocity_gap_seconds: float = 0.12,
     ) -> None:
+        """
+        Initialize causal smoothing, scale estimation and joint history.
+
+        Usage: Inference only.
+        """
         if not 0.0 < smoothing_alpha <= 1.0:
             raise ValueError("smoothing_alpha must be between 0 and 1")
         if maximum_velocity_gap_seconds <= 0.0:
@@ -57,6 +62,11 @@ class KinematicsTracker:
         timestamp: float,
         points: dict[str, JointPoint],
     ) -> KinematicFrame:
+        """
+        Update smoothed points, physical velocities and limb speeds.
+
+        Usage: Inference only.
+        """
         if self._last_timestamp is not None and timestamp <= self._last_timestamp:
             raise ValueError("analytics timestamps must be strictly increasing")
         self._last_timestamp = timestamp

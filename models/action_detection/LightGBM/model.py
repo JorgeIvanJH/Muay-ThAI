@@ -15,6 +15,11 @@ def build_model(
     random_state: int = 42,
     n_estimators: int = 500,
 ) -> LGBMClassifier:
+    """
+    Construct the configured LightGBM classifier baseline.
+
+    Usage: Training only.
+    """
     if class_count < 2:
         raise ValueError("At least two classes are required")
 
@@ -39,6 +44,11 @@ def build_model(
 
 
 def save_model_bundle(bundle: dict[str, Any], output_path: Path | str) -> Path:
+    """
+    Save a fitted LightGBM model and preprocessing metadata with Joblib.
+
+    Usage: Training only.
+    """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, path)

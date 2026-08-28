@@ -1,10 +1,7 @@
 """
 Shared pose preprocessing for action-detection models.
 
-The raw dataset contains one row per YOLO detection per frame. This module
-selects the largest detected person, converts pixel coordinates to a
-body-centred representation, and creates causal pose windows. Both the
-LightGBM and TCN models consume these exact features.
+The raw dataset contains one row per YOLO detection per frame. This module selects the largest detected person, converts pixel coordinates to a body-centred representation, and creates causal pose windows. Both the LightGBM and TCN models consume these exact features.
 """
 
 from __future__ import annotations
@@ -75,6 +72,11 @@ class VideoSplit:
 
 
 def feature_names() -> list[str]:
+    """
+    Return the flattened per-frame feature names.
+
+    Usage: Training only.
+    """
     return [
         f"{joint_name}_{channel}"
         for joint_name in JOINT_NAMES
@@ -83,6 +85,11 @@ def feature_names() -> list[str]:
 
 
 def required_raw_columns() -> set[str]:
+    """
+    Return the columns required in a generated raw pose CSV.
+
+    Usage: Training only.
+    """
     columns = {
         "video_id",
         "frame_index",
@@ -113,6 +120,8 @@ def required_raw_columns() -> set[str]:
 def _numeric(series: pd.Series) -> pd.Series:
     """
     Convert a pandas Series to numeric, coercing errors to NaN.
+
+    Usage: Both training and inference.
     """
     return pd.to_numeric(series, errors="coerce")
 
@@ -120,6 +129,9 @@ def _numeric(series: pd.Series) -> pd.Series:
 def validate_raw_schema(frames: pd.DataFrame, source: Path) -> None:
     """
     Check that the raw frames DataFrame has the expected columns and no conflicting labels.
+
+    Usage: Training only.
+
     Raises ValueError if the schema is invalid.
     """
     missing = sorted(required_raw_columns() - set(frames.columns))
@@ -146,6 +158,8 @@ def validate_raw_schema(frames: pd.DataFrame, source: Path) -> None:
 def select_largest_person(frames: pd.DataFrame) -> pd.DataFrame:
     """
     Return one selected detection per video frame.
+
+    Usage: Both training and inference.
 
     Rows with a pose are preferred. Among them, the largest bounding-box area wins, followed by bounding-box confidence and the original detection index.
     A frame with no detections keeps its empty raw row.
@@ -201,6 +215,9 @@ def _mean_available_pair(
 ) -> np.ndarray:
     """
     Compute the mean of two joint values, ignoring missing or invalid values.
+
+    Usage: Both training and inference.
+
     Returns an array of the same length as values, with NaN where both joints are invalid.
     """
     pair_values = values[:, [first_index, second_index]] # is the joint value (x or y) for the two joints
@@ -223,6 +240,8 @@ def normalize_selected_frames(
 ) -> np.ndarray:
     """
     Convert selected raw poses to body-centred joint features.
+
+    Usage: Both training and inference.
     
     Returns a 3D array of shape [frames, joints, channels], where channels are (x_body, y_body, confidence, valid). The x_body and y_body coordinates are normalized to the torso size and clipped to [-coordinate_clip, coordinate_clip]. coordinate_clip represents the maximum number of torso lengths a joint can be from the body center. 
 
@@ -332,6 +351,8 @@ def load_pose_sequences(
     """
     Load, select, and normalize every raw per-video CSV.
 
+    Usage: Training only.
+
     Returns a dictionary mapping video IDs to PoseSequence objects.
     Raises FileNotFoundError if no CSVs are found, or ValueError if the raw schema is invalid or if any video has missing frames or conflicting labels.
     """
@@ -410,15 +431,11 @@ def choose_video_split(
     """
     Split complete videos into training and validation groups.
 
-    If no explicit IDs are supplied, sorted video IDs are split
-    deterministically: the final validation_fraction are used for validation
-    and all preceding videos are used for training. At least one video is kept
-    in each group. If only validation IDs are supplied, every other available
-    video is used for training. Explicit training and validation groups are
-    also supported.
+    Usage: Training only.
 
-    Any available videos omitted from an explicit split are returned in
-    ignored_video_ids.
+    If no explicit IDs are supplied, sorted video IDs are split deterministically: the final validation_fraction are used for validation and all preceding videos are used for training. At least one video is kept in each group. If only validation IDs are supplied, every other available video is used for training. Explicit training and validation groups are also supported.
+
+    Any available videos omitted from an explicit split are returned in ignored_video_ids.
     """
 
     available = tuple(sorted(set(available_video_ids)))
@@ -477,6 +494,9 @@ def class_names_from_training(
 ) -> tuple[str, ...]:
     """
     Determine the unique action labels present in the training videos.
+
+    Usage: Training only.
+
     Returns a tuple of sorted unique class names.
     Raises ValueError if any training video ID is not in sequences.
     """
@@ -489,6 +509,9 @@ def class_names_from_training(
 def encode_labels(labels: np.ndarray, class_names: Sequence[str]) -> np.ndarray:
     """
     Convert string labels to integer indices based on the provided class names.
+
+    Usage: Training only.
+
     Raises ValueError if any label is not in class_names.
     """
     class_to_index = {
@@ -509,6 +532,9 @@ def encode_labels(labels: np.ndarray, class_names: Sequence[str]) -> np.ndarray:
 def causal_windows(features: np.ndarray, window_size: int) -> np.ndarray:
     """
     Converts the per-frame pose features into short motion histories suitable for real-time classification.
+
+    Usage: Both training and inference.
+
     Suppose normalized pose features are:
         frame 0: F0
         frame 1: F1
@@ -547,6 +573,8 @@ def horizontal_flip_pose_features(features: np.ndarray) -> np.ndarray:
     """
     Mirror a complete normalized pose sequence horizontally.
 
+    Usage: Training only.
+
     The normalized horizontal coordinate is negated and anatomical left/right joint slots are exchanged. 
     
     Vertical coordinates, confidence, and validity move with their joint. The input array is not modified.
@@ -580,6 +608,8 @@ def build_window_dataset(
     """
     Build causal pose windows and encoded labels for the specified videos.
 
+    Usage: Training only.
+
     When augment_horizontal_flip is enabled, each complete video sequence is mirrored before windowing and appended with unchanged labels.
 
     Returns a tuple (windows, targets) where:
@@ -609,6 +639,9 @@ def balanced_class_weights(
 ) -> np.ndarray:
     """
     Compute class weights inversely proportional to class frequencies for balanced training.
+
+    Usage: Training only.
+
     Returns a 1D array of shape [class_count] containing the weight for each class. 
     Raises ValueError if any class has zero occurrences in encoded_labels.
     """

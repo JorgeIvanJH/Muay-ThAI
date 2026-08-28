@@ -52,7 +52,7 @@ EVENT_FIELDNAMES = (
 
 
 @dataclass(frozen=True)
-class AnalyticsConfig:
+class AnalyticsConfig: # TODO: why not config file?
     """User-facing selection plus basic kinematic settings."""
 
     enabled_metrics: tuple[str, ...] = METRIC_NAMES
@@ -60,7 +60,13 @@ class AnalyticsConfig:
     keypoint_confidence: float = 0.25
     smoothing_alpha: float = 0.5
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None: # TODO: is this special __init__?
+        """
+        Normalize and validate the runtime analytics settings.
+
+        Usage: Inference only.
+        """
+
         metrics = tuple(dict.fromkeys(self.enabled_metrics))
         invalid = sorted(set(metrics) - set(METRIC_NAMES))
         if invalid:
@@ -82,6 +88,12 @@ class CompletedStrike:
     speed: SpeedEstimate | None
 
     def as_record(self) -> dict[str, object]:
+        """
+        Convert the completed strike into a serializable output row.
+
+        Usage: Inference only.
+        """
+
         record: dict[str, object] = {
             "event_id": self.event.event_id,
             "strike_type": self.event.strike_type,
@@ -140,6 +152,12 @@ class AnalyticsSnapshot:
     latest_event: CompletedStrike | None
 
     def as_record(self) -> dict[str, object]:
+        """
+        Convert one frame's analytics state into a JSON-safe record.
+
+        Usage: Inference only.
+        """
+
         return {
             "state": self.state,
             "active_strike": (
@@ -165,6 +183,12 @@ class StrikeAnalytics:
         *,
         state_machine_config: StrikeStateMachineConfig | None = None,
     ) -> None:
+        """
+        Initialize kinematics, event detection, counts, and event history.
+
+        Usage: Inference only.
+        """
+
         self.config = config
         self._kinematics = KinematicsTracker(
             config.person_height_m,
@@ -181,10 +205,22 @@ class StrikeAnalytics:
 
     @property
     def events(self) -> tuple[CompletedStrike, ...]:
+        """
+        Return an immutable view of the completed events in this run.
+
+        Usage: Inference only.
+        """
+
         return tuple(self._events)
 
     @property
     def counts(self) -> dict[str, dict[str, int]]:
+        """
+        Return a defensive copy of strike counts by type and side.
+
+        Usage: Inference only.
+        """
+
         return {
             strike_type: dict(side_counts)
             for strike_type, side_counts in self._counts.items()
@@ -194,6 +230,12 @@ class StrikeAnalytics:
         self,
         events: tuple[StrikeEvent, ...],
     ) -> tuple[CompletedStrike, ...]:
+        """
+        Add speeds, persist events, and update the requested counts.
+
+        Usage: Inference only.
+        """
+
         completed = []
         for event in events:
             speed = (
@@ -213,6 +255,12 @@ class StrikeAnalytics:
         self,
         new_events: tuple[CompletedStrike, ...] = (),
     ) -> AnalyticsSnapshot:
+        """
+        Capture the analytics state exposed for the current frame.
+
+        Usage: Inference only.
+        """
+
         return AnalyticsSnapshot(
             state=self._detector.state.value,
             active_strike=self._detector.active_strike,
@@ -230,6 +278,12 @@ class StrikeAnalytics:
         pose_points: Mapping[str, JointPoint],
         striking_probabilities: Mapping[str, float],
     ) -> AnalyticsSnapshot:
+        """
+        Process one pose and its striking-class probability inference.
+
+        Usage: Inference only.
+        """
+
         filtered_points = {
             name: point
             for name, point in pose_points.items()
@@ -251,11 +305,21 @@ class StrikeAnalytics:
         return self._snapshot(self._complete(events))
 
     def finalize(self) -> AnalyticsSnapshot:
-        """Flush an active event when the input stream ends."""
+        """
+        Flush an active event when the input stream ends.
+
+        Usage: Inference only.
+        """
 
         return self._snapshot(self._complete(self._detector.flush()))
 
     def overlay_lines(self, snapshot: AnalyticsSnapshot) -> tuple[str, ...]:
+        """
+        Format compact count, speed, and event-state overlay lines.
+
+        Usage: Inference only.
+        """
+
         lines: list[str] = []
         if snapshot.counts is not None:
             counts = snapshot.counts
@@ -300,7 +364,11 @@ class StrikeAnalytics:
         events_path: Path,
         summary_path: Path,
     ) -> None:
-        """Write one-row-per-event CSV and an aggregate JSON summary."""
+        """
+        Write one-row-per-event CSV and an aggregate JSON summary.
+
+        Usage: Inference only.
+        """
 
         events_path.parent.mkdir(parents=True, exist_ok=True)
         event_rows = [event.as_record() for event in self._events]

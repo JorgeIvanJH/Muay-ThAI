@@ -17,6 +17,11 @@ class CausalConv1d(nn.Module):
         kernel_size: int,
         dilation: int,
     ) -> None:
+        """
+        Build a left-causal temporal convolution.
+
+        Usage: Both training and inference.
+        """
         super().__init__()
         self.left_padding = (kernel_size - 1) * dilation
         self.convolution = nn.Conv1d(
@@ -28,6 +33,11 @@ class CausalConv1d(nn.Module):
         )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        """
+        Apply convolution and remove outputs influenced by right padding.
+
+        Usage: Both training and inference.
+        """
         outputs = self.convolution(inputs)
         if self.left_padding:
             outputs = outputs[:, :, : -self.left_padding]
@@ -44,6 +54,11 @@ class TemporalResidualBlock(nn.Module):
         dilation: int,
         dropout: float,
     ) -> None:
+        """
+        Build two causal convolutions with a residual path.
+
+        Usage: Both training and inference.
+        """
         super().__init__()
         self.network = nn.Sequential(
             CausalConv1d(
@@ -73,6 +88,11 @@ class TemporalResidualBlock(nn.Module):
         self.activation = nn.ReLU()
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        """
+        Apply the temporal branch, residual branch and final activation.
+
+        Usage: Both training and inference.
+        """
         return self.activation(self.network(inputs) + self.residual(inputs))
 
 
@@ -86,6 +106,11 @@ class TCNClassifier(nn.Module):
         kernel_size: int = 3,
         dropout: float = 0.2,
     ) -> None:
+        """
+        Build the residual temporal stack and output classifier.
+
+        Usage: Both training and inference.
+        """
         super().__init__()
         if input_size < 1:
             raise ValueError("input_size must be positive")
@@ -112,6 +137,11 @@ class TCNClassifier(nn.Module):
         self.classifier = nn.Linear(current_channels, class_count)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        """
+        Return class logits for the final frame of each causal window.
+
+        Usage: Both training and inference.
+        """
         if inputs.ndim != 3:
             raise ValueError("inputs must have shape [batch, time, features]")
         temporal_features = self.temporal_network(inputs.transpose(1, 2))

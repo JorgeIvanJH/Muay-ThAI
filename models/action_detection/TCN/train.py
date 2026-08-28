@@ -42,6 +42,11 @@ WEIGHTS_DIR = Path(__file__).resolve().parent / "weights"
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parse TCN training options from the command line.
+
+    Usage: Training only.
+    """
     parser = argparse.ArgumentParser(
         description="Train a causal TCN on normalized YOLO pose windows."
     )
@@ -99,6 +104,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def set_seed(seed: int) -> None:
+    """
+    Seed Python, NumPy and PyTorch for reproducible training.
+
+    Usage: Training only.
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -107,6 +117,11 @@ def set_seed(seed: int) -> None:
 
 
 def select_device(requested: str) -> torch.device:
+    """
+    Resolve the CPU or CUDA device used to train the TCN.
+
+    Usage: Training only.
+    """
     if requested == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if requested == "cuda" and not torch.cuda.is_available():
@@ -120,6 +135,11 @@ def evaluate(
     loss_function: nn.Module,
     device: torch.device,
 ) -> tuple[float, np.ndarray, np.ndarray]:
+    """
+    Evaluate validation loss, targets and predicted class indices.
+
+    Usage: Training only.
+    """
     model.eval()
     total_loss = 0.0
     targets = []
@@ -142,6 +162,11 @@ def evaluate(
 
 
 def main() -> None:
+    """
+    Run the complete TCN training, validation and persistence workflow.
+
+    Usage: Training only.
+    """
     args = parse_args()
     if args.epochs < 1:
         raise ValueError("--epochs must be at least 1")

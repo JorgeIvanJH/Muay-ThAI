@@ -25,7 +25,11 @@ class SpeedEstimate:
 def _quadratic_peak(
     samples: tuple[SpeedSample, ...],
 ) -> tuple[float, float]:
-    """Refine a sampled peak with a guarded local quadratic fit."""
+    """
+    Refine a sampled peak with a guarded local quadratic fit.
+
+    Usage: Inference only.
+    """
 
     speeds = np.asarray([sample.speed_mps for sample in samples], dtype=float)
     timestamps = np.asarray([sample.timestamp for sample in samples], dtype=float)
@@ -70,7 +74,11 @@ def _quadratic_peak(
 def estimate_strike_speed(
     speed_samples: tuple[SpeedSample, ...],
 ) -> SpeedEstimate | None:
-    """Return robust sampled and quadratic-refined speed summaries."""
+    """
+    Return robust sampled and quadratic-refined speed summaries.
+
+    Usage: Inference only.
+    """
 
     valid = tuple(
         sample

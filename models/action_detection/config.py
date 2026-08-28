@@ -11,6 +11,9 @@ TASK_CLASS_NAMES: dict[str, tuple[str, ...]] = {
 def class_names_for_task(task: str) -> tuple[str, ...]:
     """
     Return the only labels allowed for an action-classification task.
+
+    Usage: Both training and inference.
+
     e.g:
         "guard" -> ("background", "guard_up", "guard_down")
         "striking" -> ("background", "punch", "elbow", "kick", "knee")
@@ -32,10 +35,12 @@ def resolve_classification_task(
     """
     Resolve a task explicitly or from a guard/striking dataset folder.
 
+    Usage: Training only.
+
     Raises ValueError if the task cannot be inferred or if it conflicts with the dataset folder name.
     """
 
-    dataset_task = Path(dataset_dir).name
+    dataset_task = Path(dataset_dir).name # "guard" or "striking"
     if dataset_task not in TASK_CLASS_NAMES:
         dataset_task = ""
     if task is None:
@@ -63,6 +68,15 @@ def validate_task_labels(
 ) -> tuple[str, ...]:
     """
     Validate an observed label collection against one task vocabulary.
+
+    Parameters
+    ----------
+    - task: The classification task, e.g. "guard" or "striking".
+    - labels: The collection of observed labels.
+    - source: The source of the labels, e.g. "training data" or "inference results".
+    - require_all: Whether to require all expected labels to be present.
+
+    Usage: Both training and inference.
 
     Raises ValueError if any label is invalid for the task or if any required label is missing.
     """
