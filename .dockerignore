@@ -1,0 +1,11 @@
+# Build context for dataset/tcn_backend/Dockerfile (docker compose builds from the repo root).
+# Only the models package and the backend folder enter the image; weights are bind-mounted.
+*
+!models/**
+!dataset/tcn_backend/**
+**/weights/
+**/__pycache__/
+**/*.pyc
+dataset/tcn_backend/data/
+dataset/tcn_backend/.pytest_cache/
+models/mde/Depth-Anything-V2/

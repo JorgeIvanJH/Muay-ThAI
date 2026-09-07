@@ -261,7 +261,7 @@ remains understandable without the separate live metrics window.
 Webcam queues discard stale waiting frames rather than accumulating latency;
 every discard is counted. File queues block and retain all frames even when
 processing takes longer than the source video. The real-time default is
-`yolo26s-pose.pt`, while dataset generation deliberately retains the larger
+`yolo26l-pose.pt` and dataset generation is also
 `yolo26l-pose.pt` for consistency with existing training data.
 
 For a lower-overhead measurement, disable rendering outputs independently:

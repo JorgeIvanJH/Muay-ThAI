@@ -1,0 +1,5 @@
+label-studio-sdk>=2.1
+ultralytics==8.4.83
+pandas
+numpy>=2.2
+opencv-python-headless

@@ -40,6 +40,8 @@ hostname:
 | Browser to YOLO health endpoint | `http://localhost:9090/health` |
 | Label Studio container to YOLO | `http://yolo:9090` |
 | YOLO container to Label Studio | `http://label-studio:8080` |
+| Browser to TCN backend health endpoint | `http://localhost:9091/health` |
+| Label Studio container to TCN backend | `http://tcn-backend:9090` |
 
 Do not use the Label Studio URL as the Model Backend URL. Port `8080` is Label
 Studio; the ML backend is on port `9090`.
@@ -211,6 +213,51 @@ References:
 - [TimelineLabels YOLO tutorial](https://labelstud.io/guide/ml_tutorials/yolo_timeline_labels)
 - [Label Studio ML backend Docker networking](https://labelstud.io/guide/ml#localhost-and-Docker-containers)
 
+
+## TCN pre-annotation backend (recommended)
+
+[tcn_backend/](./tcn_backend/) is a second ML backend that serves the project's
+own trained TCN bundles (`models/action_detection/TCN/weights/tcn_guard.pt` and
+`tcn_striking.pt`) as timeline pre-annotations. Unlike the stock YOLO backend
+above it shares the exact preprocessing, causal window and weights of live
+inference, and it never trains: its `fit()` only logs. Retraining stays in
+`models/action_detection/TCN/train.py` from exported labels.
+
+Start it next to Label Studio (the `.env` token is reused):
+
+```powershell
+docker compose up --build -d tcn-backend
+docker compose logs -f tcn-backend
+Invoke-RestMethod http://localhost:9091/health
+```
+
+Connect it in **each** project:
+
+1. Open **Settings > Model > Connect Model**.
+2. Set **Name** to `TCN Timeline` and **Backend URL** to
+   `http://tcn-backend:9090` (inside the Docker network; never `localhost`).
+3. Select no authentication, leave **Interactive preannotations** off, validate
+   and save. Label Studio sends the labeling config; the backend reads the label
+   set and picks the guard or striking bundle, or rejects a config whose labels
+   match neither task.
+4. In **Settings > Annotation** enable **Use predictions to prelabel tasks** and
+   select the `tcn_guard@...` / `tcn_striking@...` model version.
+5. Optionally disconnect the `YOLO Timeline` model so its LSTM stops training on
+   every submitted annotation.
+
+How predictions arrive: one video takes minutes (YOLO on every frame) while
+Label Studio waits at most 100 s for `/predict`, so the backend works
+asynchronously. Opening a task, or selecting tasks and choosing
+**Actions > Retrieve predictions**, schedules a job; when it finishes the
+backend posts the prediction through the Label Studio API and it appears on the
+timeline after a reload. Predictions cover every frame from 1 (`background`
+included), 1-based and inclusive like the exports, with one label per region.
+`model_version` is `<bundle file>@<training timestamp>` so a timeline can be
+traced back to the weights in `weights/runs/`.
+
+To run the backend on the host instead (debugging), see
+[tcn_backend/README.md](./tcn_backend/README.md); Label Studio then connects to
+`http://host.docker.internal:9090`.
 
 ## Videos
 

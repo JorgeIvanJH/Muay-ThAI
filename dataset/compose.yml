@@ -55,6 +55,39 @@ services:
     networks:
       - labeling
 
+  tcn-backend:
+    image: muay-thai/tcn-backend:v0
+    container_name: TCNBackendContainer
+    build:
+      # Repo root so the image can COPY models/ (see .dockerignore at the root).
+      context: ..
+      dockerfile: dataset/tcn_backend/Dockerfile
+    gpus: all
+    environment:
+      LOG_LEVEL: INFO
+      WORKERS: "1"
+      THREADS: "4"
+      MODEL_DIR: /data
+      PREDICT_MODE: async
+      YOLO_DEVICE: "0"
+      TCN_DEVICE: cpu
+      LABEL_STUDIO_HOST: ${LABEL_STUDIO_HOST:-http://label-studio:8080}
+      LABEL_STUDIO_URL: ${LABEL_STUDIO_HOST:-http://label-studio:8080}
+      LABEL_STUDIO_API_KEY: ${LABEL_STUDIO_API_KEY:-}
+    ports:
+      # Host port differs from the yolo service; inside the network use http://tcn-backend:9090
+      - "9091:9090"
+    volumes:
+      # Weights are mounted, not baked in, so retraining never needs a rebuild.
+      - ../models/action_detection/TCN/weights:/app/models/action_detection/TCN/weights:ro
+      - ../models/yolo/weights:/app/models/yolo/weights:ro
+      - ./tcn_backend/data:/data
+    depends_on:
+      - label-studio
+    restart: unless-stopped
+    networks:
+      - labeling
+
 networks:
   labeling:
     name: muay-thai-labeling

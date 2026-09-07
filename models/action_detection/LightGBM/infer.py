@@ -103,3 +103,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    """
+    conda run -n muay-thai python models/action_detection/LightGBM/infer.py --source 0 --display
+    
+    """
