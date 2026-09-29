@@ -28,7 +28,7 @@ The workflow is:
 
 ## Video timeline labeling stack
 
-Label Studio and its YOLO ML backend run together with
+Label Studio and the project's TCN pre-annotation backend run together with
 [compose.yml](./compose.yml).
 
 The shared `muay-thai-labeling` Docker network gives each service a stable
@@ -37,26 +37,19 @@ hostname:
 | Connection | URL |
 | --- | --- |
 | Browser to Label Studio | `http://localhost:8080` |
-| Browser to YOLO health endpoint | `http://localhost:9090/health` |
-| Label Studio container to YOLO | `http://yolo:9090` |
-| YOLO container to Label Studio | `http://label-studio:8080` |
 | Browser to TCN backend health endpoint | `http://localhost:9091/health` |
 | Label Studio container to TCN backend | `http://tcn-backend:9090` |
+| TCN backend container to Label Studio | `http://label-studio:8080` |
 
 Do not use the Label Studio URL as the Model Backend URL. Port `8080` is Label
-Studio; the ML backend is on port `9090`.
+Studio; the backend listens on port `9090` inside the network (`9091` from the
+host).
 
 ### Prerequisites
 
-- Docker Desktop running Linux containers
-- The Label Studio ML backend cloned below this directory
+- Docker Desktop running Linux containers, with GPU support for the backend
+- Trained TCN bundles in `models/action_detection/TCN/weights/`
 - Videos encoded at a constant frame rate of exactly 30 FPS
-
-Clone the ML backend once from this `dataset` directory:
-
-```powershell
-git clone https://github.com/HumanSignal/label-studio-ml-backend.git
-```
 
 ### Persistent environment variables
 
@@ -71,21 +64,22 @@ LABEL_STUDIO_API_KEY=replace-with-your-label-studio-access-token
 
 Find the token in **Label Studio > Account & Settings > Access Token**. If a
 token is created or changed while the containers are running, recreate only
-the YOLO service so it receives the new value:
+the backend so it receives the new value:
 
 ```powershell
-docker compose up -d --no-deps --force-recreate yolo
+docker compose up -d --no-deps --force-recreate tcn-backend
 ```
 
-The environment variables are used in the YOLO-to-Label-Studio direction so
-the backend can download uploaded or protected videos. They are not Basic
-Authentication credentials for the Model connection.
+The backend uses these variables to download the task videos from Label Studio
+and to post its predictions back. They are not Basic Authentication
+credentials for the Model connection.
 
 ### Persistent Storage
 
-The Label Studio database and uploaded media remain in `dataset/LSdata`, while
-YOLO models and cached features remain in the bind-mounted directories under
-`label-studio-ml-backend/label_studio_ml/examples/yolo`.
+The Label Studio database and uploaded media remain in `dataset/LSdata`. The
+backend's prediction cache remains in `dataset/tcn_backend/data` (safe to
+delete; predictions are recomputed on demand). Model weights are bind-mounted
+read-only from `models/`, so retraining never needs an image rebuild.
 
 ### Start and stop
 
@@ -108,8 +102,8 @@ Check status and logs:
 ```powershell
 docker compose ps
 docker compose logs --tail 100 label-studio
-docker compose logs --tail 100 yolo
-Invoke-RestMethod http://localhost:9090/health
+docker compose logs --tail 100 tcn-backend
+Invoke-RestMethod http://localhost:9091/health
 ```
 
 Stop the services without deleting their persistent data:
@@ -118,48 +112,20 @@ Stop the services without deleting their persistent data:
 docker compose down
 ```
 
-### Windows line-ending safeguard
-
-Windows Git checkouts can convert `start.sh` from LF to CRLF. Linux then
-interprets the shebang as `/bin/bash\r` and reports:
-
-```text
-exec /app/start.sh: no such file or directory
-```
-
-The unified Compose command normalizes the script every time the YOLO
-container starts. The YOLO Dockerfile also contains this build-time safeguard
-after `COPY . ./`:
-
-```dockerfile
-RUN sed -i 's/\r$//' /app/start.sh && chmod +x /app/start.sh
-```
-
 ## Labeling interface
 
 Use [timeline-labeling-guard.xml](./timeline-labeling-guard.xml) for the guard
 project and [timeline-labeling-striking.xml](./timeline-labeling-striking.xml)
 for the striking project in **Project Settings > Labeling Interface > Code**.
 
-The configuration keeps the project-specific labels and enables the trainable
-timeline classifier:
-
-The guard configuration is shown below. The striking configuration uses the
-same settings but only the background, punch, elbow, kick, and knee labels.
+The guard configuration is shown below. The striking configuration is the same
+but uses the background, punch, elbow, kick, and knee labels.
 
 ```xml
 <View>
   <TimelineLabels
     name="videoLabels"
     toName="video"
-    model_trainable="true"
-    model_classifier_epochs="1000"
-    model_classifier_sequence_size="16"
-    model_classifier_hidden_size="32"
-    model_classifier_num_layers="1"
-    model_classifier_f1_threshold="0.95"
-    model_classifier_accuracy_threshold="0.99"
-    model_score_threshold="0.5"
   >
     <Label value="background" background="#a2a2a2"/>
     <Label value="guard_up" background="#1aff00"/>
@@ -180,49 +146,22 @@ same settings but only the background, punch, elbow, kick, and knee labels.
 video. A mismatched or variable frame rate misaligns annotations and model
 predictions.
 
-With 30 FPS and `model_classifier_sequence_size="16"`, each classifier
-sequence covers approximately 0.53 seconds. Changing the sequence size,
-hidden size, number of layers, or set of labels resets the saved classifier.
+The label set is what tells the TCN backend which task a project is: it must
+match `TASK_CLASS_NAMES` in `models/action_detection/config.py` exactly.
 
-## Connect and train the model
-
-In the Label Studio project:
-
-1. Open **Settings > Model > Connect Model**.
-2. Set **Name** to `YOLO Timeline`.
-3. Set **Backend URL** to `http://yolo:9090`.
-4. Select no authentication method.
-5. Leave **Interactive preannotations** off.
-6. Validate and save the connection.
-
-Train and use the model as follows:
-
-1. Manually annotate and submit several representative videos.
-2. Each annotation creation or update incrementally trains the LSTM
-   classifier.
-3. Continue until predictions begin appearing on new tasks.
-4. Review, correct, and submit those predictions to continue training.
-
-The tutorial recommends roughly 10–20 well-annotated videos of about 500
-frames each before expecting meaningful predictions. This backend is a
-demonstration model: it trains the LSTM classifier on YOLO features, not the
-YOLO feature extractor itself, and class balance matters.
-
-References:
-
-- [TimelineLabels YOLO tutorial](https://labelstud.io/guide/ml_tutorials/yolo_timeline_labels)
-- [Label Studio ML backend Docker networking](https://labelstud.io/guide/ml#localhost-and-Docker-containers)
+Reference:
+[Label Studio ML backend Docker networking](https://labelstud.io/guide/ml#localhost-and-Docker-containers)
 
 
-## TCN pre-annotation backend (recommended)
+## TCN pre-annotation backend
 
-[tcn_backend/](./tcn_backend/) is a second Label Studio ML backend. Its job is
-to pre-fill the timeline with suggested labels (pre-annotations) using the TCN
-models this project already trained
+[tcn_backend/](./tcn_backend/) is the project's Label Studio ML backend. Its job
+is to pre-fill the timeline with suggested labels (pre-annotations) using the
+TCN models this project already trained
 (`models/action_detection/TCN/weights/tcn_guard.pt` and `tcn_striking.pt`). You
 then correct those suggestions instead of labelling every frame from scratch.
 
-It differs from the stock YOLO backend above in two ways:
+Two things to know about it:
 
 1. **It uses the same model and maths as live inference.** It normalises the
    joints the same way, uses the same 32-frame causal window (each frame's
@@ -234,7 +173,7 @@ It differs from the stock YOLO backend above in two ways:
    message. To improve the model, export the corrected labels, rebuild the
    dataset and retrain with `models/action_detection/TCN/train.py` as usual.
 
-Start it next to Label Studio (the `.env` token is reused):
+To (re)build and start only the backend (the `.env` token is reused):
 
 ```powershell
 docker compose up --build -d tcn-backend
@@ -253,8 +192,9 @@ Connect it in **each** project:
    match neither task.
 4. In **Settings > Annotation** enable **Use predictions to prelabel tasks** and
    select the `tcn_guard@...` / `tcn_striking@...` model version.
-5. Optionally disconnect the `YOLO Timeline` model so its LSTM stops training on
-   every submitted annotation.
+5. If an older `YOLO Timeline` model (the stock HumanSignal backend this
+   project used before) is still listed, delete it: its service no longer
+   exists and Label Studio will report connection errors.
 
 How predictions arrive: processing one video takes minutes, because YOLO has to
 run on every frame, but Label Studio only waits 100 s for a `/predict` reply.
