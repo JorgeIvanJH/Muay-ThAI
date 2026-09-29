@@ -216,12 +216,23 @@ References:
 
 ## TCN pre-annotation backend (recommended)
 
-[tcn_backend/](./tcn_backend/) is a second ML backend that serves the project's
-own trained TCN bundles (`models/action_detection/TCN/weights/tcn_guard.pt` and
-`tcn_striking.pt`) as timeline pre-annotations. Unlike the stock YOLO backend
-above it shares the exact preprocessing, causal window and weights of live
-inference, and it never trains: its `fit()` only logs. Retraining stays in
-`models/action_detection/TCN/train.py` from exported labels.
+[tcn_backend/](./tcn_backend/) is a second Label Studio ML backend. Its job is
+to pre-fill the timeline with suggested labels (pre-annotations) using the TCN
+models this project already trained
+(`models/action_detection/TCN/weights/tcn_guard.pt` and `tcn_striking.pt`). You
+then correct those suggestions instead of labelling every frame from scratch.
+
+It differs from the stock YOLO backend above in two ways:
+
+1. **It uses the same model and maths as live inference.** It normalises the
+   joints the same way, uses the same 32-frame causal window (each frame's
+   prediction only sees that frame and the 31 before it), and loads the same
+   trained weights. What you see in Label Studio is what the real model would
+   predict on that video.
+2. **It only predicts and never trains.** Label Studio can ask a backend to
+   learn from new annotations by calling `fit()`; here `fit()` just logs a
+   message. To improve the model, export the corrected labels, rebuild the
+   dataset and retrain with `models/action_detection/TCN/train.py` as usual.
 
 Start it next to Label Studio (the `.env` token is reused):
 
@@ -245,15 +256,27 @@ Connect it in **each** project:
 5. Optionally disconnect the `YOLO Timeline` model so its LSTM stops training on
    every submitted annotation.
 
-How predictions arrive: one video takes minutes (YOLO on every frame) while
-Label Studio waits at most 100 s for `/predict`, so the backend works
-asynchronously. Opening a task, or selecting tasks and choosing
-**Actions > Retrieve predictions**, schedules a job; when it finishes the
-backend posts the prediction through the Label Studio API and it appears on the
-timeline after a reload. Predictions cover every frame from 1 (`background`
-included), 1-based and inclusive like the exports, with one label per region.
-`model_version` is `<bundle file>@<training timestamp>` so a timeline can be
-traced back to the weights in `weights/runs/`.
+How predictions arrive: processing one video takes minutes, because YOLO has to
+run on every frame, but Label Studio only waits 100 s for a `/predict` reply.
+So the backend doesn't answer straight away:
+
+1. Opening a task, or selecting tasks and choosing
+   **Actions > Retrieve predictions**, queues a background job and returns
+   immediately.
+2. When the job finishes, the backend sends the prediction to Label Studio
+   through its API.
+3. Reload the task page and the labels appear on the timeline.
+
+What the prediction contains:
+
+- **Every frame is labelled**, including `background`, so there are no gaps on
+  the timeline.
+- **Frame numbers start at 1 and ranges include both ends**, the same
+  convention as Label Studio's exports.
+- **Each region has exactly one label.**
+- **`model_version` is `<bundle file>@<training timestamp>`** (for example
+  `tcn_guard@...`), so you can tell which weights in `weights/runs/` produced a
+  given timeline.
 
 To run the backend on the host instead (debugging), see
 [tcn_backend/README.md](./tcn_backend/README.md); Label Studio then connects to

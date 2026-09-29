@@ -8,6 +8,33 @@ Retraining stays in `models/action_detection/TCN/train.py`.
 Read `model.py`'s module docstring for the design (task selection from the
 label config, once-per-process model loading, async post-back, exact JSON).
 
+## How this backend was created
+
+It follows the official template from
+[Write your own ML backend](https://labelstud.io/guide/ml_create):
+
+1. Install the SDK: clone `HumanSignal/label-studio-ml-backend`, then
+   `pip install -e .`
+2. Generate the skeleton: `label-studio-ml create my_ml_backend`, which
+   produces the files in this folder:
+   - `model.py`: the only project-specific code. It contains a class that
+     inherits from `LabelStudioMLBase` (here `TCNTimelineModel`).
+   - `_wsgi.py`: the SDK's web server (uWSGI). Not modified.
+   - `Dockerfile`: for running in Docker. The template's `docker-compose.yml`
+     and `.dockerignore` were replaced by the `tcn-backend` service in
+     `dataset/compose.yml` and the root `.dockerignore`, because the build
+     context is the repo root.
+   - `requirements.txt`: our dependencies. `requirements-base.txt` and
+     `requirements-test.txt` are the SDK's and are not modified.
+   - `test_api.py`: our tests. `README.md`: this file.
+3. Override the SDK methods in `model.py`:
+   - `predict(tasks, context)`: required. Returns predictions in Label Studio
+     JSON. Here it queues a job and posts the result back asynchronously.
+   - `fit(event, data)`: optional and called on annotation events. Here it
+     only logs.
+4. Run it (`docker compose up`, port 9090 inside the container) and connect it
+   in **Settings > Model**.
+
 ## Run with Docker (normal use)
 
 From `dataset/` (compose reads `dataset/.env` for `LABEL_STUDIO_API_KEY`):
